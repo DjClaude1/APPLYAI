@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and subscription info",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "pro"] },
+        "resumeCount": { "type": "number" },
+        "applicationCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "plan"]
+    },
+    "Resume": {
+      "title": "Resume",
+      "description": "Generated resume data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": {
+          "type": "object",
+          "properties": {
+            "fullName": { "type": "string" },
+            "jobTitle": { "type": "string" },
+            "profilePic": { "type": "string" },
+            "nationality": { "type": "string" },
+            "idPassport": { "type": "string" },
+            "email": { "type": "string" },
+            "phone": { "type": "string" },
+            "location": { "type": "string" },
+            "summary": { "type": "string" },
+            "experience": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "company": { "type": "string" },
+                  "role": { "type": "string" },
+                  "period": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            },
+            "skills": { "type": "array", "items": { "type": "string" } },
+            "education": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "school": { "type": "string" },
+                  "degree": { "type": "string" },
+                  "year": { "type": "string" }
+                }
+              }
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "position": { "type": "string" },
+                  "company": { "type": "string" },
+                  "contact": { "type": "string" }
+                }
+              }
+            },
+            "template": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "content"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Job application record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "company": { "type": "string" },
+        "location": { "type": "string" },
+        "status": { "type": "string", "enum": ["applied", "interview", "rejected", "offered"] },
+        "appliedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "jobTitle", "company", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "/resumes/{resumeId}": {
+      "schema": "Resume",
+      "description": "Resume documents"
+    },
+    "/applications/{applicationId}": {
+      "schema": "Application",
+      "description": "Application tracking documents"
+    }
+  }
+}
