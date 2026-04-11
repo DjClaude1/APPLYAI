@@ -5,13 +5,43 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Search, MapPin, Briefcase, Zap, CheckCircle2, Loader2, ExternalLink, Navigation, FileWarning } from 'lucide-react';
+import { Search, MapPin, Briefcase, Zap, CheckCircle2, Loader2, ExternalLink, Navigation, FileWarning, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, doc, updateDoc, increment, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
-import { GoogleGenAI, Type } from "@google/genai";
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  getDocs,
+  addDoc,
+  doc,
+  updateDoc,
+  increment
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { generateAIContent, cleanJson } from '../lib/gemini';
+import { Type } from '@google/genai';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { Label } from "../components/ui/label";
+import { ScrollArea } from "../components/ui/scroll-area";
 import {
   ModernTemplate,
   ClassicTemplate,
@@ -19,8 +49,6 @@ import {
   MinimalTemplate,
   ExecutiveTemplate
 } from '../components/ResumeTemplates';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface Job {
   id: string;
@@ -31,7 +59,8 @@ interface Job {
   salary: string;
   description: string;
   postedAt: string;
-  link?: string;
+  link: string;
+  source: string;
 }
 
 export default function JobSearch() {
@@ -43,6 +72,7 @@ export default function JobSearch() {
   const [appliedJobs, setAppliedJobs] = useState<string[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [locating, setLocating] = useState(false);
   const [jobType, setJobType] = useState('all');
   const [salaryRange, setSalaryRange] = useState('all');
@@ -55,29 +85,45 @@ export default function JobSearch() {
   const [minSalary, setMinSalary] = useState('');
   const [maxSalary, setMaxSalary] = useState('');
   const [userResumes, setUserResumes] = useState<any[]>([]);
-  const [selectedResumeForApply, setSelectedResumeForApply] = useState<any>(null);
+  const [userCoverLetters, setUserCoverLetters] = useState<any[]>([]);
+  const [selectedResumeId, setSelectedResumeId] = useState<string>('');
+  const [selectedCoverLetterId, setSelectedCoverLetterId] = useState<string>('none');
+  const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+  const [targetJob, setTargetJob] = useState<Job | null>(null);
+  const [recruiterEmail, setRecruiterEmail] = useState('');
+  const [isGuessingEmail, setIsGuessingEmail] = useState(false);
 
   useEffect(() => {
-    const fetchResumes = async () => {
+    const fetchUserData = async () => {
       if (!user) return;
       try {
-        const q = query(
+        // Fetch Resumes
+        const resumeQ = query(
           collection(db, 'resumes'),
-          where('userId', '==', user.uid),
-          orderBy('updatedAt', 'desc'),
-          limit(1)
+          where('uid', '==', user.uid),
+          orderBy('updated_at', 'desc')
         );
-        const querySnapshot = await getDocs(q);
-        const resumes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const resumeSnapshot = await getDocs(resumeQ);
+        const resumes = resumeSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setUserResumes(resumes);
         if (resumes.length > 0) {
-          setSelectedResumeForApply(resumes[0]);
+          setSelectedResumeId(resumes[0].id);
         }
+
+        // Fetch Cover Letters
+        const clQ = query(
+          collection(db, 'cover_letters'),
+          where('uid', '==', user.uid),
+          orderBy('created_at', 'desc')
+        );
+        const clSnapshot = await getDocs(clQ);
+        const cls = clSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setUserCoverLetters(cls);
       } catch (error) {
-        console.error('Error fetching resumes:', error);
+        console.error('Error fetching user documents:', error);
       }
     };
-    fetchResumes();
+    fetchUserData();
   }, [user]);
 
   const fetchRealJobs = async () => {
@@ -88,7 +134,16 @@ export default function JobSearch() {
 
     setLoading(true);
     try {
-      const prompt = `Find 5 real current job openings for "${searchTerm}" ${locationTerm ? `in "${locationTerm}"` : '(Remote or Anywhere)'}. 
+      const prompt = `Search for 12-15 REAL, CURRENT job openings for "${searchTerm}" ${locationTerm ? `in "${locationTerm}"` : '(Remote or Anywhere)'}. 
+      
+      CRITICAL INSTRUCTIONS:
+      1. SOURCE DIVERSITY: Provide a wide variety of sources. Include listings from LinkedIn, Indeed, Gumtree, Google Search results, and direct Company Career pages. Do NOT include Glassdoor, Reed, Monster, Totaljobs, or ZipRecruiter.
+      2. DIRECT URLS ONLY: ONLY return jobs where you have found a direct, functional URL to the SPECIFIC job posting. DO NOT guess, construct, or hallucinate URLs. 
+      3. NO SEARCH PAGES: Do not return URLs that point to search results pages. The URL must point to a single, specific job listing.
+      4. NO MOCK DATA: Every single job must be a real, live opening as of today.
+      5. VERIFICATION: Double-check that the URL is a direct link to the job description.
+      6. QUANTITY: Try to find at least 12 high-quality matches if they exist.
+
       Filters to apply:
       - Job Type: ${jobType === 'all' ? 'Any' : jobType}
       - Salary Range: ${minSalary || maxSalary ? `$${minSalary || 0} - $${maxSalary || 'Any'}` : (salaryRange === 'all' ? 'Any' : salaryRange)}
@@ -97,64 +152,116 @@ export default function JobSearch() {
       - Sort By: ${sortBy}
       - Industry: ${industry === 'all' ? 'Any' : industry}
       - Seniority Level: ${seniority === 'all' ? 'Any' : seniority}
-      - Company Size: ${companySize === 'all' ? 'Any' : companySize}
-      
-      IMPORTANT: Return ONLY a valid JSON array of objects. Do not include markdown formatting or extra text.
-      
-      Return a JSON array of objects with:
-      - id: unique string
-      - title: job title
-      - company: company name
-      - location: city, state
-      - type: Full-time, Part-time, or Contract
-      - salary: estimated salary range or "Competitive"
-      - description: 2-sentence summary
-      - postedAt: relative time (e.g. "2 days ago")
-      - link: URL to the job posting if available`;
+      - Company Size: ${companySize === 'all' ? 'Any' : companySize}`;
 
-      const response = await (ai.models as any).generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                title: { type: Type.STRING },
-                company: { type: Type.STRING },
-                location: { type: Type.STRING },
-                type: { type: Type.STRING },
-                salary: { type: Type.STRING },
-                description: { type: Type.STRING },
-                postedAt: { type: Type.STRING },
-                link: { type: Type.STRING }
-              },
-              required: ["id", "title", "company", "location"]
-            }
+      const result = await generateAIContent(prompt, {
+        useSearch: true,
+        jsonMode: true,
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              title: { type: Type.STRING },
+              company: { type: Type.STRING },
+              location: { type: Type.STRING },
+              type: { type: Type.STRING },
+              salary: { type: Type.STRING },
+              description: { type: Type.STRING },
+              postedAt: { type: Type.STRING },
+              link: { type: Type.STRING, description: "The EXACT direct URL to the job posting found in search results" },
+              source: { type: Type.STRING, description: "The specific site name (e.g., LinkedIn, Glassdoor, Company Website)" }
+            },
+            required: ["id", "title", "company", "location", "type", "salary", "description", "postedAt", "link", "source"]
           }
         }
       });
 
-      const text = response.text?.trim();
-      if (!text) {
-        throw new Error('No response from AI');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch jobs');
       }
 
-      const jobsData = JSON.parse(text);
-      setJobs(Array.isArray(jobsData) ? jobsData : []);
+      const jobsData = JSON.parse(cleanJson(result.text));
+      const validatedJobs = (Array.isArray(jobsData) ? jobsData : []).map((job: any, index: number) => ({
+        ...job,
+        id: job.id || `job-${Date.now()}-${index}`
+      }));
       
-      if (!jobsData || jobsData.length === 0) {
+      setJobs(validatedJobs);
+      
+      if (validatedJobs.length === 0) {
         toast.info('No jobs found. Try a different search.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Job Search Error:', error);
-      toast.error('Failed to fetch real-time jobs. Please try again.');
+      toast.error(error.message?.includes('JSON') ? 'AI returned invalid data. Please try again.' : 'Failed to fetch real-time jobs. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreJobs = async () => {
+    if (!searchTerm && !locationTerm) return;
+    
+    setLoadingMore(true);
+    try {
+      const existingTitles = jobs.map(j => j.title).join(', ');
+      const prompt = `Search for 10 MORE REAL, CURRENT job openings for "${searchTerm}" ${locationTerm ? `in "${locationTerm}"` : '(Remote or Anywhere)'}. 
+      
+      CRITICAL: These MUST be different from the following jobs already found: ${existingTitles.substring(0, 500)}.
+      
+      INSTRUCTIONS:
+      1. SOURCE DIVERSITY: Use a mix of LinkedIn, Indeed, Gumtree, Google Search results, etc. Do NOT include Glassdoor, Reed, Monster, Totaljobs, or ZipRecruiter.
+      2. DIRECT URLS ONLY: No search pages, only specific job listings.
+      3. NO MOCK DATA: Real, live openings only.`;
+
+      const result = await generateAIContent(prompt, {
+        useSearch: true,
+        jsonMode: true,
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              title: { type: Type.STRING },
+              company: { type: Type.STRING },
+              location: { type: Type.STRING },
+              type: { type: Type.STRING },
+              salary: { type: Type.STRING },
+              description: { type: Type.STRING },
+              postedAt: { type: Type.STRING },
+              link: { type: Type.STRING },
+              source: { type: Type.STRING }
+            },
+            required: ["id", "title", "company", "location", "type", "salary", "description", "postedAt", "link", "source"]
+          }
+        }
+      });
+
+      if (result.success) {
+        try {
+          const moreJobs = JSON.parse(cleanJson(result.text));
+          if (Array.isArray(moreJobs) && moreJobs.length > 0) {
+            const validatedMoreJobs = moreJobs.map((job: any, index: number) => ({
+              ...job,
+              id: job.id || `job-more-${Date.now()}-${index}`
+            }));
+            setJobs(prev => [...prev, ...validatedMoreJobs]);
+            toast.success(`Found ${validatedMoreJobs.length} more jobs!`);
+          } else {
+            toast.info('No more unique jobs found.');
+          }
+        } catch (e) {
+          console.error('JSON Parse Error in Load More:', e);
+          toast.error('Failed to parse additional jobs.');
+        }
+      }
+    } catch (error) {
+      console.error('Load More Error:', error);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -169,13 +276,15 @@ export default function JobSearch() {
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          // Use reverse geocoding via Gemini or just a simple prompt
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: `What city and state is at coordinates ${latitude}, ${longitude}? Return only "City, State".`,
-          });
-          setLocationTerm(response.text.trim());
-          toast.success('Location updated!');
+          // Use reverse geocoding via AI
+          const result = await generateAIContent(`What city and state is at coordinates ${latitude}, ${longitude}? Return only "City, State".`);
+          
+          if (result.success) {
+            setLocationTerm(result.text.trim());
+            toast.success('Location updated!');
+          } else {
+            throw new Error('Failed to identify location');
+          }
         } catch (error) {
           console.error(error);
           toast.error('Failed to identify location.');
@@ -191,27 +300,48 @@ export default function JobSearch() {
     );
   };
 
-  const handleAutoApply = async (job: Job) => {
-    if (!user) return;
+  const openApplyModal = async (job: Job) => {
+    setTargetJob(job);
+    setIsApplyModalOpen(true);
+    setIsGuessingEmail(true);
+    
+    // Guess email
+    try {
+      const emailPrompt = `Based on this job posting for ${job.title} at ${job.company}, what is the most likely recruiter or careers email address? 
+      Description: ${job.description}
+      If you can't find one, suggest a standard one like careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com or hr@${job.company.toLowerCase().replace(/\s+/g, '')}.com.
+      Return ONLY the email address.`;
+      
+      const result = await generateAIContent(emailPrompt);
+      if (result.success) {
+        setRecruiterEmail(result.text.trim().toLowerCase());
+      } else {
+        setRecruiterEmail(`careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com`);
+      }
+    } catch (err) {
+      setRecruiterEmail(`careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com`);
+    } finally {
+      setIsGuessingEmail(false);
+    }
+  };
 
-    // Check if user has a resume
-    if (userResumes.length === 0) {
-      toast.error('You need to create a resume first before applying.', {
-        action: {
-          label: 'Create Resume',
-          onClick: () => navigate('/resume-builder')
-        }
-      });
+  const handleAutoApply = async () => {
+    if (!user || !targetJob) return;
+    const job = targetJob;
+
+    const selectedResume = userResumes.find(r => r.id === selectedResumeId);
+    if (!selectedResume) {
+      toast.error('Please select a resume.');
       return;
     }
 
-    // Check limits for free plan
-    if (userData?.plan === 'free' && (userData?.applicationCount || 0) >= 3) {
-      toast.error('You have reached the limit of 3 applications on the Free plan. Please upgrade to Pro.');
+    if (!recruiterEmail || !recruiterEmail.includes('@')) {
+      toast.error('Please enter a valid recruiter email.');
       return;
     }
 
     setApplyingId(job.id);
+    setIsApplyModalOpen(false);
     
     try {
       // 1. Generate PDF of the selected resume
@@ -219,7 +349,7 @@ export default function JobSearch() {
       if (!element) throw new Error('Preview element not found');
 
       // Wait a bit for the template to render
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       const canvas = await html2canvas(element, { scale: 2 });
       const imgData = canvas.toDataURL('image/png');
@@ -230,27 +360,13 @@ export default function JobSearch() {
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       
       const pdfBase64 = pdf.output('datauristring').split(',')[1];
-      const fileName = `${(selectedResumeForApply.content?.fullName || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`;
+      const fileName = `${(selectedResume.content?.fullName || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`;
 
-      // 2. Try to find/guess recruiter email using Gemini
-      let recruiterEmail = '';
-      try {
-        const emailPrompt = `Based on this job posting for ${job.title} at ${job.company}, what is the most likely recruiter or careers email address? 
-        Description: ${job.description}
-        If you can't find one, suggest a standard one like careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com or hr@${job.company.toLowerCase().replace(/\s+/g, '')}.com.
-        Return ONLY the email address.`;
-        
-        const emailResponse = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: emailPrompt,
-        });
-        recruiterEmail = emailResponse.text.trim().toLowerCase();
-        // Basic validation
-        if (!recruiterEmail.includes('@')) {
-          recruiterEmail = `careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com`;
-        }
-      } catch (err) {
-        recruiterEmail = `careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com`;
+      // 2. Prepare Cover Letter if selected
+      let coverLetterText = '';
+      if (selectedCoverLetterId !== 'none') {
+        const cl = userCoverLetters.find(c => c.id === selectedCoverLetterId);
+        if (cl) coverLetterText = cl.content;
       }
 
       // 3. Send via API
@@ -261,8 +377,8 @@ export default function JobSearch() {
           email: recruiterEmail,
           pdfBase64,
           fileName,
-          subject: `Job Application: ${job.title} - ${selectedResumeForApply.content?.fullName}`,
-          body: `Hi Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position advertised. Please find my resume attached for your review.\n\nBest regards,\n${selectedResumeForApply.content?.fullName}`
+          subject: `Job Application: ${job.title} - ${selectedResume.content?.fullName}`,
+          body: coverLetterText || `Hi Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position advertised. Please find my resume attached for your review.\n\nBest regards,\n${selectedResume.content?.fullName}`
         })
       });
 
@@ -272,24 +388,31 @@ export default function JobSearch() {
       }
 
       // 4. Record in Firestore
-      await addDoc(collection(db, 'applications'), {
-        userId: user.uid,
-        jobTitle: job.title,
-        company: job.company,
-        location: job.location,
-        status: 'applied',
-        appliedAt: new Date().toISOString(),
-        recruiterEmail
-      });
+      try {
+        await addDoc(collection(db, 'applications'), {
+          uid: user.uid,
+          job_title: job.title,
+          company: job.company,
+          location: job.location,
+          status: 'applied',
+          applied_at: new Date().toISOString(),
+          recruiter_email: recruiterEmail,
+          resume_id: selectedResumeId,
+          cover_letter_id: selectedCoverLetterId !== 'none' ? selectedCoverLetterId : null
+        });
 
-      // 5. Update user application count
-      await updateDoc(doc(db, 'users', user.uid), {
-        applicationCount: increment(1)
-      });
+        // 5. Update user application count
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          application_count: increment(1)
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, 'applications');
+      }
 
       setAppliedJobs(prev => [...prev, job.id]);
       toast.success(`Application sent to ${job.company}!`, {
-        description: `Your resume has been emailed to the recruiter.`,
+        description: `Your documents have been emailed to ${recruiterEmail}.`,
         icon: <CheckCircle2 className="text-green-500" />
       });
     } catch (error: any) {
@@ -497,6 +620,9 @@ export default function JobSearch() {
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="text-xl font-bold">{job.title}</h3>
                       <Badge variant="secondary">{job.type}</Badge>
+                      <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold border-primary/20 text-primary/70">
+                        {job.source}
+                      </Badge>
                       {appliedJobs.includes(job.id) && (
                         <Badge variant="default" className="bg-green-500 hover:bg-green-600 gap-1">
                           <CheckCircle2 size={12} /> Applied
@@ -504,7 +630,11 @@ export default function JobSearch() {
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm mb-4">
-                      <span className="flex items-center gap-1"><Briefcase size={16} /> {job.company}</span>
+                      <span className="flex items-center gap-1">
+                        <Briefcase size={16} /> {job.company} 
+                        <span className="mx-1 text-muted-foreground/30">•</span>
+                        <span className="text-primary font-medium">{job.source}</span>
+                      </span>
                       <span className="flex items-center gap-1"><MapPin size={16} /> {job.location}</span>
                       <span className="font-medium text-foreground">{job.salary}</span>
                     </div>
@@ -519,15 +649,15 @@ export default function JobSearch() {
                       <div className="flex flex-col gap-1">
                         <Button 
                           className="gap-2 w-full" 
-                          onClick={() => handleAutoApply(job)}
+                          onClick={() => openApplyModal(job)}
                           disabled={applyingId === job.id}
                         >
                           {applyingId === job.id ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
                           Auto Apply
                         </Button>
-                        {userData?.plan === 'free' && (userData?.applicationCount || 0) >= 2 && (
+                        {userData?.plan === 'free' && (userData?.application_count || 0) >= 2 && (
                           <p className="text-[10px] text-amber-600 font-medium text-center">
-                            {3 - (userData?.applicationCount || 0)} application left on Free plan
+                            {3 - (userData?.application_count || 0)} application left on Free plan
                           </p>
                         )}
                       </div>
@@ -542,8 +672,11 @@ export default function JobSearch() {
                     </Button>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t text-xs text-muted-foreground">
-                  Posted {job.postedAt}
+                <div className="mt-4 pt-4 border-t flex justify-between items-center text-xs text-muted-foreground">
+                  <span>Posted {job.postedAt}</span>
+                  <span className="flex items-center gap-1 italic">
+                    <CheckCircle2 size={12} className="text-green-500" /> Verified Listing from {job.source}
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -557,18 +690,116 @@ export default function JobSearch() {
         )}
       </div>
 
-      {/* Hidden preview for PDF generation during apply */}
-      <div className="hidden">
-        {selectedResumeForApply && (
-          <div id="resume-preview-apply-hidden">
-            {selectedResumeForApply.content.template === 'modern' && <ModernTemplate resumeData={selectedResumeForApply.content} previewId="resume-preview-apply-hidden" />}
-            {selectedResumeForApply.content.template === 'classic' && <ClassicTemplate resumeData={selectedResumeForApply.content} previewId="resume-preview-apply-hidden" />}
-            {selectedResumeForApply.content.template === 'creative' && <CreativeTemplate resumeData={selectedResumeForApply.content} previewId="resume-preview-apply-hidden" />}
-            {selectedResumeForApply.content.template === 'minimal' && <MinimalTemplate resumeData={selectedResumeForApply.content} previewId="resume-preview-apply-hidden" />}
-            {selectedResumeForApply.content.template === 'executive' && <ExecutiveTemplate resumeData={selectedResumeForApply.content} previewId="resume-preview-apply-hidden" />}
+      {jobs.length > 0 && (
+        <div className="mt-12 flex justify-center">
+          <Button 
+            variant="outline" 
+            size="lg" 
+            className="px-12 gap-2" 
+            onClick={loadMoreJobs} 
+            disabled={loadingMore}
+          >
+            {loadingMore ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+            {loadingMore ? 'Searching for more...' : 'Load More Jobs'}
+          </Button>
+        </div>
+      )}
+
+      {/* Hidden preview for PDF generation during apply - kept in DOM but off-screen for html2canvas */}
+      <div className="absolute opacity-0 pointer-events-none -z-50 overflow-hidden h-0 w-0">
+        {userResumes.find(r => r.id === selectedResumeId) && (
+          <div id="resume-preview-apply-hidden" style={{ width: '794px' }}>
+            {userResumes.find(r => r.id === selectedResumeId).content.template === 'modern' && <ModernTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
+            {userResumes.find(r => r.id === selectedResumeId).content.template === 'classic' && <ClassicTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
+            {userResumes.find(r => r.id === selectedResumeId).content.template === 'creative' && <CreativeTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
+            {userResumes.find(r => r.id === selectedResumeId).content.template === 'minimal' && <MinimalTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
+            {userResumes.find(r => r.id === selectedResumeId).content.template === 'executive' && <ExecutiveTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
           </div>
         )}
       </div>
+
+      {/* Apply Confirmation Modal */}
+      <Dialog open={isApplyModalOpen} onOpenChange={setIsApplyModalOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Confirm Application</DialogTitle>
+            <DialogDescription>
+              Review your documents and the recipient's email before applying to <strong>{targetJob?.company}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="resume-select">Select Resume</Label>
+              <Select value={selectedResumeId} onValueChange={setSelectedResumeId}>
+                <SelectTrigger id="resume-select">
+                  <SelectValue placeholder="Choose a resume" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userResumes.map((resume) => (
+                    <SelectItem key={resume.id} value={resume.id}>
+                      {resume.title || 'Untitled Resume'}
+                    </SelectItem>
+                  ))}
+                  {userResumes.length === 0 && (
+                    <SelectItem value="none" disabled>No resumes found</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cover-letter-select">Select Cover Letter (Optional)</Label>
+              <Select value={selectedCoverLetterId} onValueChange={setSelectedCoverLetterId}>
+                <SelectTrigger id="cover-letter-select">
+                  <SelectValue placeholder="Choose a cover letter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Cover Letter</SelectItem>
+                  {userCoverLetters.map((cl) => (
+                    <SelectItem key={cl.id} value={cl.id}>
+                      {cl.title || 'Untitled Cover Letter'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="recruiter-email">Recruiter Email</Label>
+              <div className="relative">
+                <Input 
+                  id="recruiter-email" 
+                  value={recruiterEmail} 
+                  onChange={(e) => setRecruiterEmail(e.target.value)}
+                  placeholder="recruiter@company.com"
+                  className={isGuessingEmail ? "pr-10" : ""}
+                />
+                {isGuessingEmail && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 className="animate-spin text-primary" size={16} />
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground italic">
+                {isGuessingEmail ? "AI is guessing the best contact email..." : "We've guessed this email based on the job post. Please verify it."}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsApplyModalOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={handleAutoApply} 
+              disabled={!selectedResumeId || !recruiterEmail || applyingId !== null}
+              className="gap-2"
+            >
+              {applyingId ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
+              Send Application
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

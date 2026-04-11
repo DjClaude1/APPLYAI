@@ -2,6 +2,48 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches auth.uid)
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required, format: email)
+    //   - display_name: string (optional)
+    //   - plan: string (enum: ['free', 'pro'])
+    //   - resume_count: number (required, >= 0)
+    //   - application_count: number (required, >= 0)
+    //   - created_at: string (ISO 8601)
+    //
+    // Collection: resumes
+    // Document ID: {resumeId} (auto-generated)
+    // Fields:
+    //   - uid: string (required, matches owner's auth.uid)
+    //   - title: string (required, 1-100 chars)
+    //   - content: map (required, resume data)
+    //   - created_at: string (ISO 8601)
+    //   - updated_at: string (ISO 8601)
+    //
+    // Collection: applications
+    // Document ID: {applicationId} (auto-generated)
+    // Fields:
+    //   - uid: string (required, matches owner's auth.uid)
+    //   - job_title: string (required)
+    //   - company: string (required)
+    //   - status: string (enum: ['applied', 'interview', 'rejected', 'offered', 'draft'])
+    //   - applied_at: string (ISO 8601)
+    //   - location: string (optional)
+    //   - recruiter_email: string (optional)
+    //   - cover_letter: string (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,58 +53,87 @@ service cloud.firestore {
     }
 
     function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.userId;
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
     }
 
     function isAdmin() {
       return isAuthenticated() && 
-             request.auth.token.email == "gameeater36@gmail.com";
+             (request.auth.token.email == "gameeater36@gmail.com" && request.auth.token.email_verified == true);
     }
 
     function isValidEmail(email) {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
     function isValidUser(data) {
       return data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
              data.plan in ['free', 'pro'] &&
-             data.resumeCount is number &&
-             data.applicationCount is number;
+             data.resume_count is number && data.resume_count >= 0 &&
+             data.application_count is number && data.application_count >= 0 &&
+             (data.display_name == null || (data.display_name is string && data.display_name.size() < 100)) &&
+             (data.created_at == null || isValidDateString(data.created_at));
     }
 
     function isValidResume(data) {
-      return data.userId == request.auth.uid &&
-             data.title is string &&
-             data.content is map;
+      return data.uid == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.content is map &&
+             (data.created_at == null || isValidDateString(data.created_at)) &&
+             (data.updated_at == null || isValidDateString(data.updated_at));
     }
 
     function isValidApplication(data) {
-      return data.userId == request.auth.uid &&
-             data.jobTitle is string &&
-             data.company is string &&
-             data.status in ['applied', 'interview', 'rejected', 'offered'];
+      return data.uid == request.auth.uid &&
+             data.job_title is string && data.job_title.size() > 0 &&
+             data.company is string && data.company.size() > 0 &&
+             data.status in ['applied', 'interview', 'rejected', 'offered', 'draft'] &&
+             (data.applied_at == null || isValidDateString(data.applied_at)) &&
+             (data.location == null || data.location is string) &&
+             (data.recruiter_email == null || data.recruiter_email == "" || isValidEmail(data.recruiter_email)) &&
+             (data.cover_letter == null || data.cover_letter is string);
     }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if (isOwner(userId) && isValidUser(request.resource.data)) || isAdmin();
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && (
+        // Ensure UID is immutable
+        request.resource.data.uid == resource.data.uid
+      )) || isAdmin();
       allow delete: if isAdmin();
     }
 
     match /resumes/{resumeId} {
-      allow read: if isDocOwner() || isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidResume(request.resource.data);
+      // Allow public read for resumes (for PublicResume.tsx)
+      allow read: if true; 
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid && isValidResume(request.resource.data);
       allow update: if (isDocOwner() && isValidResume(request.resource.data)) || isAdmin();
       allow delete: if isDocOwner() || isAdmin();
     }
 
     match /applications/{applicationId} {
       allow read: if isDocOwner() || isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidApplication(request.resource.data);
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid && isValidApplication(request.resource.data);
       allow update: if (isDocOwner() && isValidApplication(request.resource.data)) || isAdmin();
       allow delete: if isDocOwner() || isAdmin();
+    }
+
+    // Allow reading the test connection document
+    match /test/connection {
+      allow read: if true;
     }
 
     match /{path=**} {

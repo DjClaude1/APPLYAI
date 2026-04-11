@@ -3,13 +3,21 @@ import {
   User, 
   onAuthStateChanged, 
   signInWithPopup, 
+  GoogleAuthProvider, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
   signOut,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
-import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { toast } from 'sonner';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 interface AuthContextType {
   user: User | null;
@@ -29,90 +37,109 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let unsubUserData: Unsubscribe | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
-      // Clean up previous listener if it exists
-      if (unsubUserData) {
-        unsubUserData();
-        unsubUserData = null;
-      }
-
       if (currentUser) {
-        const userRef = doc(db, 'users', currentUser.uid);
+        // Fetch user data from Firestore
+        const userDocRef = doc(db, 'users', currentUser.uid);
         
-        try {
-          const userSnap = await getDoc(userRef);
-          if (!userSnap.exists()) {
-            const newUserData = {
-              uid: currentUser.uid,
-              email: currentUser.email,
-              displayName: currentUser.displayName,
-              plan: 'free',
-              resumeCount: 0,
-              applicationCount: 0,
-              createdAt: new Date().toISOString(),
-            };
-            await setDoc(userRef, newUserData);
-            setUserData(newUserData);
+        // Use onSnapshot for real-time updates to userData
+        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserData(docSnap.data());
           } else {
-            setUserData(userSnap.data());
+            // If doc doesn't exist, we might need to create it (handled in signup/login)
+            setUserData(null);
           }
-
-          // Listen for real-time updates to user data
-          unsubUserData = onSnapshot(userRef, (doc) => {
-            if (doc.exists()) {
-              setUserData(doc.data());
-            }
-          }, (error) => {
-            handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-          });
-        } catch (error) {
+          setLoading(false);
+        }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-        }
+          setLoading(false);
+        });
+
+        return () => unsubDoc();
       } else {
         setUserData(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => {
-      unsubscribeAuth();
-      if (unsubUserData) unsubUserData();
-    };
+    return () => unsubscribe();
   }, []);
 
   const login = async () => {
-    await signInWithPopup(auth, googleProvider);
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Check if user exists in Firestore, if not create
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        try {
+          await setDoc(userDocRef, {
+            uid: user.uid,
+            email: user.email,
+            display_name: user.displayName,
+            plan: 'free',
+            resume_count: 0,
+            application_count: 0,
+            created_at: new Date().toISOString(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+        }
+      }
+    } catch (error: any) {
+      console.error(error);
+      throw error;
+    }
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (error: any) {
+      console.error(error);
+      throw error;
+    }
   };
 
   const signUpWithEmail = async (email: string, pass: string, name: string) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-    await updateProfile(userCredential.user, { displayName: name });
-    
-    // Create user doc immediately to ensure it exists
-    const userRef = doc(db, 'users', userCredential.user.uid);
-    const newUserData = {
-      uid: userCredential.user.uid,
-      email: email,
-      displayName: name,
-      plan: 'free',
-      resumeCount: 0,
-      applicationCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-    await setDoc(userRef, newUserData);
-    setUserData(newUserData);
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, pass);
+      const user = result.user;
+      
+      await updateProfile(user, { displayName: name });
+      
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          display_name: name,
+          plan: 'free',
+          resume_count: 0,
+          application_count: 0,
+          created_at: new Date().toISOString(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+      }
+    } catch (error: any) {
+      console.error(error);
+      throw error;
+    }
   };
 
   const logout = async () => {
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (error: any) {
+      console.error(error);
+    }
   };
 
   return (

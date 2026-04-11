@@ -10,15 +10,25 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { GoogleGenAI, Type } from "@google/genai";
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, doc, updateDoc, increment, getDocs, query, where, getDoc } from 'firebase/firestore';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  increment,
+  collection,
+  addDoc
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { generateAIContent, cleanJson } from '../lib/gemini';
+import { Type } from '@google/genai';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as pdfjs from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ResumeData, ResumeTemplate } from '../types';
+import { ResumeData } from '../types';
 import {
   ModernTemplate,
   ClassicTemplate,
@@ -33,14 +43,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "../components/ui/dialog";
 
 // Set up PDF.js worker
 const PDFJS_VERSION = '5.6.205';
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default function ResumeBuilder() {
   const { user, userData } = useAuth();
@@ -50,7 +57,7 @@ export default function ResumeBuilder() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [resumeData, setResumeData] = useState<ResumeData>({
-    fullName: userData?.displayName || '',
+    fullName: userData?.display_name || '',
     jobTitle: '',
     profilePic: '',
     nationality: '',
@@ -81,27 +88,34 @@ export default function ResumeBuilder() {
       try {
         const docRef = doc(db, 'resumes', id);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().userId === user.uid) {
-          const data = docSnap.data().content;
-          setResumeData({
-            fullName: data.fullName || '',
-            jobTitle: data.jobTitle || '',
-            profilePic: data.profilePic || '',
-            nationality: data.nationality || '',
-            idPassport: data.idPassport || '',
-            email: data.email || '',
-            phone: data.phone || '',
-            location: data.location || '',
-            summary: data.summary || '',
-            experience: data.experience || [{ company: '', role: '', period: '', description: '' }],
-            skills: data.skills || [],
-            education: data.education || [{ school: '', degree: '', year: '' }],
-            references: data.references || [{ name: '', position: '', company: '', contact: '' }],
-            template: data.template || 'modern',
-            font: data.font || 'sans',
-          });
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.uid === user.uid) {
+            const content = data.content;
+            setResumeData({
+              fullName: content.fullName || '',
+              jobTitle: content.jobTitle || '',
+              profilePic: content.profilePic || '',
+              nationality: content.nationality || '',
+              idPassport: content.idPassport || '',
+              email: content.email || '',
+              phone: content.phone || '',
+              location: content.location || '',
+              summary: content.summary || '',
+              experience: content.experience || [{ company: '', role: '', period: '', description: '' }],
+              skills: content.skills || [],
+              education: content.education || [{ school: '', degree: '', year: '' }],
+              references: content.references || [{ name: '', position: '', company: '', contact: '' }],
+              template: content.template || 'modern',
+              font: content.font || 'sans',
+            });
+          } else {
+            toast.error('Access denied.');
+            navigate('/dashboard');
+          }
         } else {
-          toast.error('Resume not found or access denied.');
+          toast.error('Resume not found.');
           navigate('/dashboard');
         }
       } catch (error) {
@@ -229,55 +243,58 @@ export default function ResumeBuilder() {
       - suggestedSkills: An array of 5-10 relevant technical skills for this role.
       - suggestedReferences: An array of 2-3 placeholder professional references with 'name', 'position', 'company', and 'contact'.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING },
-              experience: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    company: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    period: { type: Type.STRING },
-                    description: { type: Type.STRING }
-                  }
-                }
-              },
-              suggestedSkills: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              suggestedReferences: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    position: { type: Type.STRING },
-                    company: { type: Type.STRING },
-                    contact: { type: Type.STRING }
-                  }
-                }
+      const result = await generateAIContent(prompt, {
+        jsonMode: true,
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            experience: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  company: { type: Type.STRING },
+                  role: { type: Type.STRING },
+                  period: { type: Type.STRING },
+                  description: { type: Type.STRING }
+                },
+                required: ["company", "role", "period", "description"]
+              }
+            },
+            suggestedSkills: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            suggestedReferences: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  position: { type: Type.STRING },
+                  company: { type: Type.STRING },
+                  contact: { type: Type.STRING }
+                },
+                required: ["name", "position", "company", "contact"]
               }
             }
-          }
+          },
+          required: ["summary", "experience", "suggestedSkills", "suggestedReferences"]
         }
       });
 
-      const result = JSON.parse(response.text);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate AI content');
+      }
+
+      const aiResult = JSON.parse(cleanJson(result.text));
       setResumeData(prev => ({
         ...prev,
-        summary: result.summary,
-        experience: result.experience,
-        skills: Array.from(new Set([...prev.skills, ...result.suggestedSkills])),
-        references: result.suggestedReferences
+        summary: aiResult.summary,
+        experience: aiResult.experience,
+        skills: Array.from(new Set([...prev.skills, ...aiResult.suggestedSkills])),
+        references: aiResult.suggestedReferences
       }));
       toast.success('AI Resume content generated!');
     } catch (error) {
@@ -292,7 +309,7 @@ export default function ResumeBuilder() {
     if (!user) return;
     
     // Check limits for free plan
-    if (!id && userData?.plan === 'free' && (userData?.resumeCount || 0) >= 1) {
+    if (!id && userData?.plan === 'free' && (userData?.resume_count || 0) >= 1) {
       toast.error('You have reached the limit of 1 resume on the Free plan. Please upgrade to Pro.');
       return;
     }
@@ -301,31 +318,43 @@ export default function ResumeBuilder() {
     try {
       if (id) {
         // Update existing
-        await updateDoc(doc(db, 'resumes', id), {
-          title: `${resumeData.jobTitle} Resume`,
-          content: resumeData,
-          updatedAt: new Date().toISOString()
-        });
-        toast.success('Resume updated!');
+        const docRef = doc(db, 'resumes', id);
+        try {
+          await updateDoc(docRef, {
+            title: `${resumeData.jobTitle} Resume`,
+            content: resumeData,
+            updated_at: new Date().toISOString()
+          });
+          toast.success('Resume updated!');
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `resumes/${id}`);
+        }
       } else {
         // Create new
-        await addDoc(collection(db, 'resumes'), {
-          userId: user.uid,
-          title: `${resumeData.jobTitle} Resume`,
-          content: resumeData,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
+        try {
+          await addDoc(collection(db, 'resumes'), {
+            uid: user.uid,
+            title: `${resumeData.jobTitle} Resume`,
+            content: resumeData,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
 
-        // Update user resume count
-        await updateDoc(doc(db, 'users', user.uid), {
-          resumeCount: increment(1)
-        });
-        toast.success('Resume saved to your dashboard!');
+          // Update user resume count
+          const userDocRef = doc(db, 'users', user.uid);
+          await updateDoc(userDocRef, {
+            resume_count: increment(1)
+          });
+
+          toast.success('Resume saved to your dashboard!');
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, 'resumes');
+        }
       }
       navigate('/dashboard');
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, id ? `resumes/${id}` : 'resumes');
+      console.error('Error saving resume:', error);
+      toast.error('Failed to save resume');
     } finally {
       setLoading(false);
     }
@@ -484,62 +513,69 @@ export default function ResumeBuilder() {
         "references": [{"name": "string", "position": "string", "company": "string", "contact": "string"}]
       }`;
 
-      const response = await (ai.models as any).generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              fullName: { type: Type.STRING },
-              jobTitle: { type: Type.STRING },
-              email: { type: Type.STRING },
-              phone: { type: Type.STRING },
-              location: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              experience: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    company: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    period: { type: Type.STRING },
-                    description: { type: Type.STRING }
-                  }
-                }
-              },
-              skills: { type: Type.ARRAY, items: { type: Type.STRING } },
-              education: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    school: { type: Type.STRING },
-                    degree: { type: Type.STRING },
-                    year: { type: Type.STRING }
-                  }
-                }
-              },
-              references: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    position: { type: Type.STRING },
-                    company: { type: Type.STRING },
-                    contact: { type: Type.STRING }
-                  }
-                }
+      const result = await generateAIContent(prompt, {
+        jsonMode: true,
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            fullName: { type: Type.STRING },
+            jobTitle: { type: Type.STRING },
+            email: { type: Type.STRING },
+            phone: { type: Type.STRING },
+            location: { type: Type.STRING },
+            summary: { type: Type.STRING },
+            experience: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  company: { type: Type.STRING },
+                  role: { type: Type.STRING },
+                  period: { type: Type.STRING },
+                  description: { type: Type.STRING }
+                },
+                required: ["company", "role", "period", "description"]
+              }
+            },
+            skills: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            education: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  school: { type: Type.STRING },
+                  degree: { type: Type.STRING },
+                  year: { type: Type.STRING }
+                },
+                required: ["school", "degree", "year"]
+              }
+            },
+            references: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  position: { type: Type.STRING },
+                  company: { type: Type.STRING },
+                  contact: { type: Type.STRING }
+                },
+                required: ["name", "position", "company", "contact"]
               }
             }
-          }
+          },
+          required: ["fullName", "jobTitle", "email", "phone", "location", "summary", "experience", "skills", "education"]
         }
       });
 
-      const parsedData = JSON.parse(response.text);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to parse resume content');
+      }
+
+      const parsedData = JSON.parse(cleanJson(result.text));
       setResumeData(prev => ({
         ...prev,
         ...parsedData,
@@ -890,7 +926,7 @@ export default function ResumeBuilder() {
                         </div>
                         <div className="space-y-2">
                           <Label>Contact Info</Label>
-                          <Input value={ref.contact || ''} onChange={(e) => handleReferenceChange(index, 'contact', e.target.value)} placeholder="Email or Phone" />
+                          <Input value={ref.contact || ''} onChange={(e) => handleReferenceChange(index, 'contact', e.target.value)} />
                         </div>
                       </div>
                     </div>
@@ -900,122 +936,136 @@ export default function ResumeBuilder() {
                   </Button>
                 </TabsContent>
               </Tabs>
-
-              <div className="grid grid-cols-2 gap-4 mt-8">
-                <Button variant="secondary" className="gap-2" onClick={generateWithAI} disabled={loading}>
-                  {loading ? <Loader2 className="animate-spin" size={18} /> : <Wand2 size={18} />}
-                  Generate with AI
-                </Button>
-                <Button className="gap-2" onClick={saveResume} disabled={loading}>
-                  {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                  Save Resume
-                </Button>
-              </div>
             </CardContent>
           </Card>
+
+          <div className="flex flex-wrap gap-4">
+            <Button className="flex-1 gap-2 h-12" onClick={saveResume} disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+              {id ? 'Update Resume' : 'Save to Dashboard'}
+            </Button>
+            <Button variant="secondary" className="flex-1 gap-2 h-12" onClick={generateWithAI} disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <Wand2 size={18} />}
+              AI Enhance
+            </Button>
+            <Button variant="outline" className="flex-1 gap-2 h-12" onClick={exportPDF} disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+              Export PDF
+            </Button>
+            <Button variant="outline" className="flex-1 gap-2 h-12" onClick={() => setIsShareDialogOpen(true)} disabled={loading}>
+              <Share2 size={18} /> Share
+            </Button>
+          </div>
         </div>
 
         {/* Preview Side */}
         <div className="w-full lg:w-1/2">
-          <div className="sticky top-24 space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-lg">Live Preview</h3>
+          <Card className="sticky top-8 overflow-hidden">
+            <CardHeader className="bg-muted/50 border-b">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Live Preview</CardTitle>
+                <div className="flex gap-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500/20" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/20" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/20" />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 bg-muted/20">
+              <ScrollArea className="h-[800px] w-full">
+                <div className="p-8 flex justify-center">
+                  <div id="resume-preview" className="shadow-2xl">
+                    {resumeData.template === 'modern' && <ModernTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'classic' && <ClassicTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} previewId="resume-preview" />}
+                  </div>
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Share Resume</DialogTitle>
+            <DialogDescription>
+              Send your resume directly to hiring managers.
+              {userData?.plan !== 'pro' && (
+                <Badge variant="secondary" className="ml-2">PRO FEATURE</Badge>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6 py-4">
+            <div className="space-y-4">
+              <Label className="flex items-center gap-2">
+                <Mail size={16} /> Send via Email
+              </Label>
               <div className="flex gap-2">
-                <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-2">
-                      <Share2 size={16} /> Share
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                      <DialogTitle>Share Resume</DialogTitle>
-                      <DialogDescription>
-                        Send your resume directly to hiring managers.
-                        {userData?.plan !== 'pro' && (
-                          <Badge variant="secondary" className="ml-2">PRO FEATURE</Badge>
-                        )}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-6 py-4">
-                      <div className="space-y-4">
-                        <Label className="flex items-center gap-2">
-                          <Mail size={16} /> Send via Email
-                        </Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            placeholder="hiring@company.com" 
-                            value={shareEmail}
-                            onChange={(e) => setShareEmail(e.target.value)}
-                            disabled={userData?.plan !== 'pro'}
-                          />
-                          <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro'}>Send</Button>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <Label className="flex items-center gap-2">
-                          <MessageCircle size={16} /> Send via WhatsApp
-                        </Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            placeholder="+1234567890" 
-                            value={sharePhone}
-                            onChange={(e) => setSharePhone(e.target.value)}
-                            disabled={userData?.plan !== 'pro'}
-                          />
-                          <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro'}>Send</Button>
-                        </div>
-                      </div>
-                    </div>
-                    {userData?.plan !== 'pro' && (
-                      <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
-                        <p className="text-xs text-center font-medium">
-                          Upgrade to <span className="text-primary font-bold">PRO</span> to unlock direct sharing features.
-                        </p>
-                        <Button variant="link" className="w-full h-auto p-0 mt-2 text-xs" onClick={() => navigate('/settings')}>
-                          Upgrade Now
-                        </Button>
-                      </div>
-                    )}
-                  </DialogContent>
-                </Dialog>
-                <Button variant="outline" size="sm" className="gap-2" onClick={exportPDF} disabled={loading}>
-                  <Download size={16} /> Export PDF
+                <Input 
+                  placeholder="hiring@company.com" 
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  disabled={userData?.plan !== 'pro' || loading}
+                />
+                <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro' || loading}>
+                  {loading ? <Loader2 className="animate-spin" size={16} /> : 'Send'}
                 </Button>
               </div>
             </div>
-            
-            <Card className="shadow-2xl overflow-hidden border-none">
-              <ScrollArea className="h-[800px] w-full bg-white text-slate-900">
-                {resumeData.template === 'modern' && <ModernTemplate resumeData={resumeData} />}
-                {resumeData.template === 'classic' && <ClassicTemplate resumeData={resumeData} />}
-                {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} />}
-                {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} />}
-                {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} />}
-              </ScrollArea>
-            </Card>
+            <div className="space-y-4">
+              <Label className="flex items-center gap-2">
+                <MessageCircle size={16} /> Send via WhatsApp
+              </Label>
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="+1234567890" 
+                  value={sharePhone}
+                  onChange={(e) => setSharePhone(e.target.value)}
+                  disabled={userData?.plan !== 'pro' || loading}
+                />
+                <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro' || loading}>Send</Button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+          {userData?.plan !== 'pro' && (
+            <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
+              <p className="text-xs text-center font-medium">
+                Upgrade to <span className="text-primary font-bold">PRO</span> to unlock direct sharing features.
+              </p>
+              <Button variant="link" className="w-full h-auto p-0 mt-2 text-xs" onClick={() => navigate('/settings')}>
+                Upgrade Now
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function TemplateOption({ active, onClick, label, isPro, description }: { active: boolean, onClick: () => void, label: string, isPro?: boolean, description?: string }) {
+function TemplateOption({ active, onClick, label, description, isPro = false }: { active: boolean, onClick: () => void, label: string, description: string, isPro?: boolean }) {
   return (
-    <button 
+    <button
       onClick={onClick}
-      className={`p-4 rounded-xl border-2 transition-all text-left flex flex-col gap-2 group ${active ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-muted hover:border-primary/30 hover:bg-muted/50'}`}
+      className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden group ${
+        active 
+          ? 'border-primary bg-primary/5 ring-1 ring-primary' 
+          : 'border-muted hover:border-primary/30 bg-background'
+      }`}
     >
-      <div className="flex justify-between items-start w-full">
-        <div className={`p-2 rounded-lg ${active ? 'bg-primary text-white' : 'bg-muted text-muted-foreground group-hover:text-primary'}`}>
-          <Layout size={20} />
-        </div>
-        {isPro && <Badge variant="secondary" className="text-[10px] px-1.5 h-4 font-bold">PRO</Badge>}
+      {isPro && (
+        <Badge variant="secondary" className="absolute -top-1 -right-1 scale-75">PRO</Badge>
+      )}
+      <div className="flex flex-col gap-1">
+        <span className="font-bold text-sm">{label}</span>
+        <span className="text-[10px] text-muted-foreground leading-tight">{description}</span>
       </div>
-      <div>
-        <p className={`font-bold text-sm ${active ? 'text-primary' : 'text-foreground'}`}>{label}</p>
-        {description && <p className="text-[10px] text-muted-foreground line-clamp-1">{description}</p>}
+      <div className={`absolute bottom-0 right-0 p-1 transition-opacity ${active ? 'opacity-100' : 'opacity-0'}`}>
+        <Layout size={12} className="text-primary" />
       </div>
     </button>
   );

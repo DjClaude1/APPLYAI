@@ -12,9 +12,8 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '10mb' }));
-
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-
+  
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });

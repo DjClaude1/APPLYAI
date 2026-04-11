@@ -33,7 +33,7 @@ export default function LandingPage() {
               </h1>
               <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
                 Generate ATS-friendly resumes, tailored cover letters, and automate your job applications. 
-                Join 10,000+ professionals who landed jobs at top tech companies.
+                Empowering professionals to land roles at top tech companies worldwide.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Button size="lg" className="h-12 px-8 text-lg gap-2" onClick={handleGetStarted}>
@@ -108,30 +108,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section className="py-20 bg-muted/30">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-12">Loved by Job Seekers</h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <TestimonialCard 
-              name="Sarah Johnson"
-              role="Software Engineer"
-              text="ApplyAI helped me land 3 interviews in my first week. The AI resume generator is magic!"
-            />
-            <TestimonialCard 
-              name="Michael Chen"
-              role="Product Manager"
-              text="The auto-apply feature saved me hours of work. I finally have a system that works for me."
-            />
-            <TestimonialCard 
-              name="Emily Rodriguez"
-              role="Marketing Specialist"
-              text="I was struggling with ATS filters until I used ApplyAI. The optimization tool is a game changer."
-            />
-          </div>
-        </div>
-      </section>
-
       {/* Footer */}
       <footer className="py-12 border-t">
         <div className="container mx-auto px-4 text-center">
@@ -173,21 +149,6 @@ function PricingCard({ title, price, features, highlighted = false, buttonText, 
       <Button variant={highlighted ? 'default' : 'outline'} className="w-full h-12 text-lg" onClick={onButtonClick}>
         {buttonText}
       </Button>
-    </div>
-  );
-}
-
-function TestimonialCard({ name, role, text }: { name: string, role: string, text: string }) {
-  return (
-    <div className="p-8 bg-background rounded-2xl border italic relative">
-      <div className="flex justify-center mb-4">
-        {[...Array(5)].map((_, i) => <Star key={i} size={16} className="text-yellow-500 fill-yellow-500" />)}
-      </div>
-      <p className="mb-6 text-lg">"{text}"</p>
-      <div>
-        <div className="font-bold">{name}</div>
-        <div className="text-sm text-muted-foreground">{role}</div>
-      </div>
     </div>
   );
 }

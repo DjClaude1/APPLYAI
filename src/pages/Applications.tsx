@@ -5,17 +5,28 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Briefcase, Calendar, MapPin, MoreVertical, ExternalLink, Trash2 } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, increment } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot,
+  deleteDoc,
+  doc,
+  updateDoc,
+  increment
+} from 'firebase/firestore';
+import { db } from '../firebase';
 import { toast } from 'sonner';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 interface Application {
   id: string;
-  jobTitle: string;
+  job_title: string;
   company: string;
   location: string;
   status: 'applied' | 'interview' | 'rejected' | 'offered';
-  appliedAt: string;
+  applied_at: string;
 }
 
 export default function Applications() {
@@ -26,14 +37,22 @@ export default function Applications() {
   useEffect(() => {
     if (!user) return;
 
-    const path = 'applications';
-    const q = query(collection(db, path), where('userId', '==', user.uid));
+    const q = query(
+      collection(db, 'applications'),
+      where('uid', '==', user.uid),
+      orderBy('applied_at', 'desc')
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application));
-      setApplications(apps.sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime()));
+      const appsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Application[];
+      setApplications(appsData);
       setLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      handleFirestoreError(error, OperationType.LIST, 'applications');
+      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -43,12 +62,16 @@ export default function Applications() {
     if (!user) return;
     try {
       await deleteDoc(doc(db, 'applications', id));
-      await updateDoc(doc(db, 'users', user.uid), {
-        applicationCount: increment(-1)
+
+      // Update user application count
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, {
+        application_count: increment(-1)
       });
+
       toast.success('Application removed.');
     } catch (error) {
-      console.error(error);
+      handleFirestoreError(error, OperationType.DELETE, `applications/${id}`);
       toast.error('Failed to remove application.');
     }
   };
@@ -91,7 +114,7 @@ export default function Applications() {
                 <tbody>
                   {applications.map((app) => (
                     <tr key={app.id} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-4 align-middle font-medium">{app.jobTitle}</td>
+                      <td className="p-4 align-middle font-medium">{app.job_title}</td>
                       <td className="p-4 align-middle">
                         <div className="flex items-center gap-2">
                           <Briefcase size={14} className="text-muted-foreground" />
@@ -101,7 +124,7 @@ export default function Applications() {
                       <td className="p-4 align-middle">
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <Calendar size={14} />
-                          {new Date(app.appliedAt).toLocaleDateString()}
+                          {new Date(app.applied_at).toLocaleDateString()}
                         </div>
                       </td>
                       <td className="p-4 align-middle">

@@ -2,19 +2,27 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle, Download } from 'lucide-react';
+import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, deleteDoc, doc, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot,
+  deleteDoc,
+  doc
+} from 'firebase/firestore';
+import { db } from '../firebase';
 import { toast } from 'sonner';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "../components/ui/dialog";
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -33,6 +41,7 @@ export default function Dashboard() {
   const { user, userData } = useAuth();
   const navigate = useNavigate();
   const [resumes, setResumes] = useState<any[]>([]);
+  const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [selectedResume, setSelectedResume] = useState<any>(null);
@@ -113,28 +122,45 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const fetchResumes = async () => {
-      if (!user) return;
-      try {
-        const q = query(
-          collection(db, 'resumes'), 
-          where('userId', '==', user.uid),
-          orderBy('updatedAt', 'desc')
-        );
-        const querySnapshot = await getDocs(q);
-        const resumeList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setResumes(resumeList);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, 'resumes');
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!user) return;
 
-    fetchResumes();
+    const q = query(
+      collection(db, 'resumes'),
+      where('uid', '==', user.uid),
+      orderBy('updated_at', 'desc')
+    );
+
+    const unsubscribeResumes = onSnapshot(q, (snapshot) => {
+      const resumesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setResumes(resumesData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'resumes');
+    });
+
+    const qApps = query(
+      collection(db, 'applications'),
+      where('uid', '==', user.uid)
+    );
+
+    const unsubscribeApps = onSnapshot(qApps, (snapshot) => {
+      const appsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setApplications(appsData);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'applications');
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribeResumes();
+      unsubscribeApps();
+    };
   }, [user]);
 
   const deleteResume = async (id: string) => {
@@ -142,24 +168,31 @@ export default function Dashboard() {
     
     try {
       await deleteDoc(doc(db, 'resumes', id));
-      setResumes(prev => prev.filter(r => r.id !== id));
       toast.success('Resume deleted');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `resumes/${id}`);
+      toast.error('Failed to delete resume');
     }
   };
 
   const stats = [
-    { label: 'Resumes Created', value: userData?.resumeCount || 0, icon: <FileText size={20} />, color: 'bg-blue-500/10 text-blue-500' },
-    { label: 'Jobs Applied', value: userData?.applicationCount || 0, icon: <Briefcase size={20} />, color: 'bg-green-500/10 text-green-500' },
-    { label: 'Success Rate', value: '12%', icon: <TrendingUp size={20} />, color: 'bg-purple-500/10 text-purple-500' },
+    { label: 'Resumes Created', value: userData?.resume_count || 0, icon: <FileText size={20} />, color: 'bg-blue-500/10 text-blue-500' },
+    { label: 'Jobs Applied', value: userData?.application_count || 0, icon: <Briefcase size={20} />, color: 'bg-green-500/10 text-green-500' },
+    { 
+      label: 'Success Rate', 
+      value: applications.length > 0 
+        ? `${Math.round((applications.filter(a => a.status === 'offered').length / applications.length) * 100)}%` 
+        : '0%', 
+      icon: <TrendingUp size={20} />, 
+      color: 'bg-purple-500/10 text-purple-500' 
+    },
   ];
 
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Welcome back, {userData?.displayName?.split(' ')[0]}!</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Welcome back, {userData?.display_name?.split(' ')[0]}!</h1>
           <p className="text-muted-foreground">Here's what's happening with your job search.</p>
         </div>
         <div className="flex gap-3">
@@ -230,7 +263,7 @@ export default function Dashboard() {
                       <div>
                         <h4 className="font-medium">{resume.title || 'Untitled Resume'}</h4>
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock size={12} /> Updated {new Date(resume.updatedAt).toLocaleDateString()}
+                          <Clock size={12} /> Updated {new Date(resume.updated_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
@@ -318,8 +351,8 @@ export default function Dashboard() {
                 )}
               </div>
               <div className="space-y-4">
-                <LimitProgress label="Resumes" current={userData?.resumeCount || 0} limit={userData?.plan === 'pro' ? '∞' : 1} />
-                <LimitProgress label="Applications" current={userData?.applicationCount || 0} limit={userData?.plan === 'pro' ? '∞' : 3} />
+                <LimitProgress label="Resumes" current={userData?.resume_count || 0} limit={userData?.plan === 'pro' ? '∞' : 1} />
+                <LimitProgress label="Applications" current={userData?.application_count || 0} limit={userData?.plan === 'pro' ? '∞' : 3} />
               </div>
             </div>
             <Link to="/settings">

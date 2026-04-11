@@ -1,5 +1,5 @@
 {
   "name": "ApplyAI",
-  "description": "AI-powered Resume Builder and Job Auto-Apply System. Generate professional resumes, cover letters, and track your job applications with ease.",
+  "description": "AI-powered Resume Builder and Job Auto-Apply System with Supabase backend. Generate professional resumes, cover letters, and track your job applications with ease.",
   "requestFramePermissions": ["geolocation"]
 }

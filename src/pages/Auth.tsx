@@ -9,53 +9,65 @@ import { toast } from 'sonner';
 import { Loader2, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
 export default function Auth() {
-  const { login, loginWithEmail, signUpWithEmail } = useAuth();
+  const { user, loading, login, loginWithEmail, signUpWithEmail } = useAuth();
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [loadingLocal, setLoadingLocal] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     name: ''
   });
 
+  React.useEffect(() => {
+    if (!loading && user) {
+      navigate('/dashboard');
+    }
+  }, [user, loading, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setLoadingLocal(true);
     try {
       if (isLogin) {
         await loginWithEmail(formData.email, formData.password);
         toast.success('Welcome back!');
       } else {
         await signUpWithEmail(formData.email, formData.password, formData.name);
-        toast.success('Account created successfully!');
+        toast.success('Account created!');
       }
       navigate('/dashboard');
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || 'Authentication failed');
     } finally {
-      setLoading(false);
+      setLoadingLocal(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
+    setLoadingLocal(true);
     try {
       await login();
-      toast.success('Signed in with Google');
       navigate('/dashboard');
     } catch (error: any) {
       console.error(error);
       toast.error('Google sign in failed');
     } finally {
-      setLoading(false);
+      setLoadingLocal(false);
     }
   };
+
+  const isConfigMissing = !import.meta.env.VITE_FIREBASE_API_KEY;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 py-12">
       <Card className="w-full max-w-md">
+        {isConfigMissing && (
+          <div className="p-4 bg-destructive/10 border-b border-destructive/20 text-destructive text-sm font-medium text-center">
+            Firebase credentials missing! Please set VITE_FIREBASE_API_KEY and other variables in the Secrets menu.
+          </div>
+        )}
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">{isLogin ? 'Welcome Back' : 'Create Account'}</CardTitle>
           <CardDescription>
@@ -110,10 +122,10 @@ export default function Auth() {
                 />
               </div>
             </div>
-            <Button type="submit" className="w-full h-11 gap-2" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin" size={18} /> : null}
+            <Button type="submit" className="w-full h-11 gap-2" disabled={loadingLocal}>
+              {loadingLocal ? <Loader2 className="animate-spin" size={18} /> : null}
               {isLogin ? 'Sign In' : 'Sign Up'}
-              {!loading && <ArrowRight size={18} />}
+              {!loadingLocal && <ArrowRight size={18} />}
             </Button>
           </form>
 
@@ -122,7 +134,7 @@ export default function Auth() {
             <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or continue with</span></div>
           </div>
 
-          <Button variant="outline" className="w-full h-11 gap-2" onClick={handleGoogleLogin} disabled={loading}>
+          <Button variant="outline" className="w-full h-11 gap-2" onClick={handleGoogleLogin} disabled={loadingLocal}>
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />

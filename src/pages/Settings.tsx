@@ -9,13 +9,14 @@ import { CheckCircle2, Shield, User, Zap, Loader2 } from 'lucide-react';
 import { PayPalButtons } from "@paypal/react-paypal-js";
 import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function Settings() {
   const { user, userData } = useAuth();
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState({
-    displayName: userData?.displayName || '',
+    displayName: userData?.display_name || '',
     email: userData?.email || ''
   });
   const [emailError, setEmailError] = useState('');
@@ -42,13 +43,16 @@ export default function Settings() {
     if (!user || emailError) return;
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        displayName: profileData.displayName,
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, {
+        display_name: profileData.displayName,
         email: profileData.email
       });
+      
       toast.success('Profile updated!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      toast.error('Failed to update profile');
     } finally {
       setLoading(false);
     }
@@ -58,12 +62,13 @@ export default function Settings() {
     if (!user) return;
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        plan: 'free'
-      });
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, { plan: 'free' });
+      
       toast.success('Your plan has been downgraded to Free.');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      toast.error('Failed to downgrade plan');
     } finally {
       setLoading(false);
     }
@@ -73,12 +78,13 @@ export default function Settings() {
     if (!user) return;
     try {
       const details = await actions.order.capture();
-      await updateDoc(doc(db, 'users', user.uid), {
-        plan: 'pro'
-      });
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, { plan: 'pro' });
+      
       toast.success(`Welcome to ApplyAI Pro, ${details.payer.name.given_name}!`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      toast.error('Failed to upgrade plan');
     }
   };
 

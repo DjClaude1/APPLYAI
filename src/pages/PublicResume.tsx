@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { ResumeData } from '../types';
 import {
   ModernTemplate,
@@ -28,13 +29,14 @@ export default function PublicResume() {
       try {
         const docRef = doc(db, 'resumes', id);
         const docSnap = await getDoc(docRef);
+
         if (docSnap.exists()) {
           setResumeData(docSnap.data().content as ResumeData);
         } else {
           setError('Resume not found.');
         }
       } catch (err) {
-        console.error(err);
+        handleFirestoreError(err, OperationType.GET, `resumes/${id}`);
         setError('Failed to load resume.');
       } finally {
         setLoading(false);
@@ -94,11 +96,13 @@ export default function PublicResume() {
       </div>
       
       <div className="shadow-2xl bg-white">
-        {resumeData.template === 'modern' && <ModernTemplate resumeData={resumeData} />}
-        {resumeData.template === 'classic' && <ClassicTemplate resumeData={resumeData} />}
-        {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} />}
-        {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} />}
-        {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} />}
+        <div id="resume-preview">
+          {resumeData.template === 'modern' && <ModernTemplate resumeData={resumeData} previewId="resume-preview" />}
+          {resumeData.template === 'classic' && <ClassicTemplate resumeData={resumeData} previewId="resume-preview" />}
+          {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} previewId="resume-preview" />}
+          {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} previewId="resume-preview" />}
+          {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} previewId="resume-preview" />}
+        </div>
       </div>
 
       <div className="mt-12 text-center text-muted-foreground text-sm">

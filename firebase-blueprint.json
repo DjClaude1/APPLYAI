@@ -7,11 +7,11 @@
       "properties": {
         "uid": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "displayName": { "type": "string" },
+        "display_name": { "type": "string" },
         "plan": { "type": "string", "enum": ["free", "pro"] },
-        "resumeCount": { "type": "number" },
-        "applicationCount": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "resume_count": { "type": "number" },
+        "application_count": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "plan"]
     },
@@ -20,7 +20,7 @@
       "description": "Generated resume data",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
+        "uid": { "type": "string" },
         "title": { "type": "string" },
         "content": {
           "type": "object",
@@ -73,24 +73,26 @@
             "template": { "type": "string" }
           }
         },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "title", "content"]
+      "required": ["uid", "title", "content"]
     },
     "Application": {
       "title": "Application",
       "description": "Job application record",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "jobTitle": { "type": "string" },
+        "uid": { "type": "string" },
+        "job_title": { "type": "string" },
         "company": { "type": "string" },
         "location": { "type": "string" },
-        "status": { "type": "string", "enum": ["applied", "interview", "rejected", "offered"] },
-        "appliedAt": { "type": "string", "format": "date-time" }
+        "status": { "type": "string", "enum": ["applied", "interview", "rejected", "offered", "draft"] },
+        "applied_at": { "type": "string", "format": "date-time" },
+        "recruiter_email": { "type": "string" },
+        "cover_letter": { "type": "string" }
       },
-      "required": ["userId", "jobTitle", "company", "status"]
+      "required": ["uid", "job_title", "company", "status"]
     }
   },
   "firestore": {

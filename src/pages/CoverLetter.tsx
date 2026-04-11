@@ -7,12 +7,17 @@ import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { FileText, Wand2, Download, Save, Loader2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { GoogleGenAI } from "@google/genai";
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs,
+  addDoc
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { generateAIContent } from '../lib/gemini';
 import jsPDF from 'jspdf';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default function CoverLetter() {
   const { user } = useAuth();
@@ -40,15 +45,17 @@ export default function CoverLetter() {
 
   const fetchResumes = async () => {
     if (!user) return;
-    const path = 'resumes';
     try {
-      const q = query(collection(db, path), where('userId', '==', user.uid));
-      const snapshot = await getDocs(q);
-      const resumeList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setResumes(resumeList);
-      if (resumeList.length > 0) setSelectedResume(resumeList[0].id);
+      const q = query(
+        collection(db, 'resumes'),
+        where('uid', '==', user.uid)
+      );
+      const querySnapshot = await getDocs(q);
+      const resumesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setResumes(resumesData);
+      if (resumesData.length > 0) setSelectedResume(resumesData[0].id);
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, path);
+      handleFirestoreError(error, OperationType.LIST, 'resumes');
     }
   };
 
@@ -80,12 +87,13 @@ export default function CoverLetter() {
 
       The cover letter should be tailored to the specific role, highlight relevant skills and experiences, and be approximately 300-400 words. Format it professionally.`;
 
-      const response = await (ai.models as any).generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-      });
-      const text = response.text;
-      setGeneratedLetter(text || '');
+      const result = await generateAIContent(prompt);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate cover letter');
+      }
+
+      setGeneratedLetter(result.text || '');
       toast.success('Cover letter generated!');
     } catch (error) {
       console.error(error);
@@ -106,6 +114,26 @@ export default function CoverLetter() {
     pdf.text(splitText, 15, 20);
     pdf.save('Cover_Letter.pdf');
     toast.success('PDF exported!');
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (!user || !generatedLetter) return;
+    
+    setLoading(true);
+    try {
+      await addDoc(collection(db, 'cover_letters'), {
+        uid: user.uid,
+        title: `Cover Letter - ${new Date().toLocaleDateString()}`,
+        content: generatedLetter,
+        created_at: new Date().toISOString()
+      });
+
+      toast.success('Cover letter saved to your library!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'cover_letters');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -220,8 +248,9 @@ export default function CoverLetter() {
                 />
               </ScrollArea>
               <div className="mt-4">
-                <Button variant="secondary" className="w-full gap-2" disabled={!generatedLetter}>
-                  <Save size={18} /> Save to Applications
+                <Button variant="secondary" className="w-full gap-2" disabled={!generatedLetter || loading} onClick={handleSaveToLibrary}>
+                  {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  Save to Library
                 </Button>
               </div>
             </CardContent>

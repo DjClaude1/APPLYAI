@@ -31,3 +31,13 @@ export interface ResumeData {
   template: ResumeTemplate;
   font: string;
 }
+
+export interface CoverLetterData {
+  id: string;
+  uid: string;
+  title: string;
+  content: string;
+  job_title?: string;
+  company?: string;
+  created_at: string;
+}
