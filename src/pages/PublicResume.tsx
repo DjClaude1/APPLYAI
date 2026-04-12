@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { supabase } from '../lib/supabase';
 import { ResumeData } from '../types';
 import {
   ModernTemplate,
@@ -27,16 +25,21 @@ export default function PublicResume() {
     const fetchResume = async () => {
       if (!id) return;
       try {
-        const docRef = doc(db, 'resumes', id);
-        const docSnap = await getDoc(docRef);
+        const { data, error } = await supabase
+          .from('resumes')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-        if (docSnap.exists()) {
-          setResumeData(docSnap.data().content as ResumeData);
+        if (error) throw error;
+
+        if (data) {
+          setResumeData(data.content as ResumeData);
         } else {
           setError('Resume not found.');
         }
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `resumes/${id}`);
+      } catch (err: any) {
+        console.error('Error fetching resume:', err);
         setError('Failed to load resume.');
       } finally {
         setLoading(false);

@@ -10,17 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  increment,
-  collection,
-  addDoc
-} from 'firebase/firestore';
-import { db } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { supabase } from '../lib/supabase';
 import { generateAIContent, cleanJson } from '../lib/gemini';
 import { Type } from '@google/genai';
 import jsPDF from 'jspdf';
@@ -86,12 +76,20 @@ export default function ResumeBuilder() {
       if (!id || !user) return;
       setLoading(true);
       try {
-        const docRef = doc(db, 'resumes', id);
-        const docSnap = await getDoc(docRef);
+        const { data, error } = await supabase
+          .from('resumes')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.uid === user.uid) {
+        if (error) {
+          console.error('Error loading resume:', error);
+          toast.error(`Failed to load resume: ${error.message}`);
+          throw error;
+        }
+
+        if (data) {
+          if (data.uid === user.id) {
             const content = data.content;
             setResumeData({
               fullName: content.fullName || '',
@@ -118,8 +116,9 @@ export default function ResumeBuilder() {
           toast.error('Resume not found.');
           navigate('/dashboard');
         }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, `resumes/${id}`);
+      } catch (error: any) {
+        console.error('Error loading resume:', error);
+        toast.error('Failed to load resume');
       } finally {
         setLoading(false);
       }
@@ -318,43 +317,49 @@ export default function ResumeBuilder() {
     try {
       if (id) {
         // Update existing
-        const docRef = doc(db, 'resumes', id);
-        try {
-          await updateDoc(docRef, {
+        const { error } = await supabase
+          .from('resumes')
+          .update({
             title: `${resumeData.jobTitle} Resume`,
             content: resumeData,
             updated_at: new Date().toISOString()
-          });
-          toast.success('Resume updated!');
-        } catch (error) {
-          handleFirestoreError(error, OperationType.UPDATE, `resumes/${id}`);
-        }
+          })
+          .eq('id', id);
+
+        if (error) throw error;
+        toast.success('Resume updated!');
       } else {
         // Create new
-        try {
-          await addDoc(collection(db, 'resumes'), {
-            uid: user.uid,
-            title: `${resumeData.jobTitle} Resume`,
-            content: resumeData,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
+        const { error: insertError } = await supabase
+          .from('resumes')
+          .insert([
+            {
+              uid: user.id,
+              title: `${resumeData.jobTitle} Resume`,
+              content: resumeData,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }
+          ]);
 
-          // Update user resume count
-          const userDocRef = doc(db, 'users', user.uid);
-          await updateDoc(userDocRef, {
-            resume_count: increment(1)
-          });
+        if (insertError) throw insertError;
 
-          toast.success('Resume saved to your dashboard!');
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, 'resumes');
-        }
+        // Update user resume count
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            resume_count: (userData?.resume_count || 0) + 1
+          })
+          .eq('id', user.id);
+
+        if (updateError) throw updateError;
+
+        toast.success('Resume saved to your dashboard!');
       }
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving resume:', error);
-      toast.error('Failed to save resume');
+      toast.error(error.message || 'Failed to save resume');
     } finally {
       setLoading(false);
     }

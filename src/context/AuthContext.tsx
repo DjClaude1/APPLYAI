@@ -1,23 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  User, 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut,
-  updateProfile
-} from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  onSnapshot 
-} from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { User } from '@supabase/supabase-js';
 import { toast } from 'sonner';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 interface AuthContextType {
   user: User | null;
@@ -37,106 +21,128 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchUserData(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
       setUser(currentUser);
       
       if (currentUser) {
-        // Fetch user data from Firestore
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        
-        // Use onSnapshot for real-time updates to userData
-        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setUserData(docSnap.data());
-          } else {
-            // If doc doesn't exist, we might need to create it (handled in signup/login)
-            setUserData(null);
-          }
-          setLoading(false);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-          setLoading(false);
-        });
-
-        return () => unsubDoc();
+        fetchUserData(currentUser.id);
       } else {
         setUserData(null);
         setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async () => {
-    const provider = new GoogleAuthProvider();
+  const fetchUserData = async (userId: string) => {
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      
-      // Check if user exists in Firestore, if not create
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-      
-      if (!userDoc.exists()) {
-        try {
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            email: user.email,
-            display_name: user.displayName,
-            plan: 'free',
-            resume_count: 0,
-            application_count: 0,
-            created_at: new Date().toISOString(),
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
-        }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        console.error('Error fetching profiles:', error);
+      } else if (data) {
+        setUserData(data);
+      } else {
+        setUserData(null);
       }
+    } catch (err) {
+      console.error('Unexpected error fetching user data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
     } catch (error: any) {
       console.error(error);
+      toast.error(error.message || 'Login failed');
       throw error;
     }
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, pass);
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+      });
+      if (error) throw error;
     } catch (error: any) {
       console.error(error);
+      toast.error(error.message || 'Login failed');
       throw error;
     }
   };
 
   const signUpWithEmail = async (email: string, pass: string, name: string) => {
     try {
-      const result = await createUserWithEmailAndPassword(auth, email, pass);
-      const user = result.user;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: pass,
+        options: {
+          data: {
+            full_name: name,
+          }
+        }
+      });
       
-      await updateProfile(user, { displayName: name });
+      if (error) throw error;
       
-      try {
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          email: user.email,
-          display_name: name,
-          plan: 'free',
-          resume_count: 0,
-          application_count: 0,
-          created_at: new Date().toISOString(),
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+      if (data.user) {
+        // Create profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: data.user.id,
+              email: data.user.email,
+              display_name: name,
+              plan: 'free',
+              resume_count: 0,
+              application_count: 0,
+            }
+          ]);
+        
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+        }
       }
     } catch (error: any) {
       console.error(error);
+      toast.error(error.message || 'Signup failed');
       throw error;
     }
   };
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
     } catch (error: any) {
       console.error(error);
     }

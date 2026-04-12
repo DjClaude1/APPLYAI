@@ -1,0 +1,59 @@
+{
+  "tables": {
+    "profiles": {
+      "description": "User profiles and subscription data",
+      "columns": {
+        "id": "uuid primary key references auth.users",
+        "email": "text",
+        "display_name": "text",
+        "plan": "text default 'free'",
+        "resume_count": "integer default 0",
+        "application_count": "integer default 0",
+        "created_at": "timestamp with time zone default now()",
+        "updated_at": "timestamp with time zone default now()"
+      }
+    },
+    "resumes": {
+      "description": "Saved resumes for users",
+      "columns": {
+        "id": "uuid primary key default gen_random_uuid()",
+        "uid": "uuid references auth.users",
+        "title": "text",
+        "content": "jsonb",
+        "created_at": "timestamp with time zone default now()",
+        "updated_at": "timestamp with time zone default now()"
+      }
+    },
+    "applications": {
+      "description": "Job application history",
+      "columns": {
+        "id": "uuid primary key default gen_random_uuid()",
+        "uid": "uuid references auth.users",
+        "job_title": "text",
+        "company": "text",
+        "location": "text",
+        "status": "text",
+        "applied_at": "timestamp with time zone default now()",
+        "recruiter_email": "text",
+        "resume_id": "uuid references resumes(id)",
+        "cover_letter_id": "uuid references cover_letters(id)"
+      }
+    },
+    "cover_letters": {
+      "description": "Saved cover letters",
+      "columns": {
+        "id": "uuid primary key default gen_random_uuid()",
+        "uid": "uuid references auth.users",
+        "title": "text",
+        "content": "text",
+        "created_at": "timestamp with time zone default now()"
+      }
+    }
+  },
+  "policies": {
+    "profiles": "Users can only read and update their own profile",
+    "resumes": "Users can only read, update, and delete their own resumes. Public read access for specific resume IDs if needed (though currently handled via PublicResume page which uses service role or anon key with proper RLS)",
+    "applications": "Users can only read, insert, and delete their own applications",
+    "cover_letters": "Users can only read and insert their own cover letters"
+  }
+}

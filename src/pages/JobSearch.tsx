@@ -7,20 +7,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Search, MapPin, Briefcase, Zap, CheckCircle2, Loader2, ExternalLink, Navigation, FileWarning, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  getDocs,
-  addDoc,
-  doc,
-  updateDoc,
-  increment
-} from 'firebase/firestore';
-import { db } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { supabase } from '../lib/supabase';
 import { generateAIContent, cleanJson } from '../lib/gemini';
 import { Type } from '@google/genai';
 import jsPDF from 'jspdf';
@@ -98,27 +85,27 @@ export default function JobSearch() {
       if (!user) return;
       try {
         // Fetch Resumes
-        const resumeQ = query(
-          collection(db, 'resumes'),
-          where('uid', '==', user.uid),
-          orderBy('updated_at', 'desc')
-        );
-        const resumeSnapshot = await getDocs(resumeQ);
-        const resumes = resumeSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setUserResumes(resumes);
-        if (resumes.length > 0) {
+        const { data: resumes, error: resumeError } = await supabase
+          .from('resumes')
+          .select('*')
+          .eq('uid', user.id)
+          .order('updated_at', { ascending: false });
+
+        if (resumeError) throw resumeError;
+        setUserResumes(resumes || []);
+        if (resumes && resumes.length > 0) {
           setSelectedResumeId(resumes[0].id);
         }
 
         // Fetch Cover Letters
-        const clQ = query(
-          collection(db, 'cover_letters'),
-          where('uid', '==', user.uid),
-          orderBy('created_at', 'desc')
-        );
-        const clSnapshot = await getDocs(clQ);
-        const cls = clSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setUserCoverLetters(cls);
+        const { data: cls, error: clError } = await supabase
+          .from('cover_letters')
+          .select('*')
+          .eq('uid', user.id)
+          .order('created_at', { ascending: false });
+
+        if (clError) throw clError;
+        setUserCoverLetters(cls || []);
       } catch (error) {
         console.error('Error fetching user documents:', error);
       }
@@ -387,27 +374,38 @@ export default function JobSearch() {
         throw new Error(result.error || 'Failed to send application email');
       }
 
-      // 4. Record in Firestore
+      // 4. Record in Supabase
       try {
-        await addDoc(collection(db, 'applications'), {
-          uid: user.uid,
-          job_title: job.title,
-          company: job.company,
-          location: job.location,
-          status: 'applied',
-          applied_at: new Date().toISOString(),
-          recruiter_email: recruiterEmail,
-          resume_id: selectedResumeId,
-          cover_letter_id: selectedCoverLetterId !== 'none' ? selectedCoverLetterId : null
-        });
+        const { error: appError } = await supabase
+          .from('applications')
+          .insert([
+            {
+              uid: user.id,
+              job_title: job.title,
+              company: job.company,
+              location: job.location,
+              status: 'applied',
+              applied_at: new Date().toISOString(),
+              recruiter_email: recruiterEmail,
+              resume_id: selectedResumeId,
+              cover_letter_id: selectedCoverLetterId !== 'none' ? selectedCoverLetterId : null
+            }
+          ]);
+
+        if (appError) throw appError;
 
         // 5. Update user application count
-        const userDocRef = doc(db, 'users', user.uid);
-        await updateDoc(userDocRef, {
-          application_count: increment(1)
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, 'applications');
+        const { error: userUpdateError } = await supabase
+          .from('profiles')
+          .update({
+            application_count: (userData?.application_count || 0) + 1
+          })
+          .eq('id', user.id);
+
+        if (userUpdateError) throw userUpdateError;
+      } catch (error: any) {
+        console.error('Database Error:', error);
+        toast.error('Application sent but failed to save to history.');
       }
 
       setAppliedJobs(prev => [...prev, job.id]);

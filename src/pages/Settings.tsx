@@ -7,10 +7,8 @@ import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { CheckCircle2, Shield, User, Zap, Loader2 } from 'lucide-react';
 import { PayPalButtons } from "@paypal/react-paypal-js";
+import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function Settings() {
   const { user, userData } = useAuth();
@@ -43,16 +41,19 @@ export default function Settings() {
     if (!user || emailError) return;
     setLoading(true);
     try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        display_name: profileData.displayName,
-        email: profileData.email
-      });
-      
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: profileData.displayName,
+          email: profileData.email
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
       toast.success('Profile updated!');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-      toast.error('Failed to update profile');
+    } catch (error: any) {
+      console.error('Update Error:', error);
+      toast.error(error.message || 'Failed to update profile');
     } finally {
       setLoading(false);
     }
@@ -62,13 +63,16 @@ export default function Settings() {
     if (!user) return;
     setLoading(true);
     try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, { plan: 'free' });
-      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ plan: 'free' })
+        .eq('id', user.id);
+
+      if (error) throw error;
       toast.success('Your plan has been downgraded to Free.');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-      toast.error('Failed to downgrade plan');
+    } catch (error: any) {
+      console.error('Downgrade Error:', error);
+      toast.error(error.message || 'Failed to downgrade plan');
     } finally {
       setLoading(false);
     }
@@ -78,13 +82,16 @@ export default function Settings() {
     if (!user) return;
     try {
       const details = await actions.order.capture();
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, { plan: 'pro' });
-      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ plan: 'pro' })
+        .eq('id', user.id);
+
+      if (error) throw error;
       toast.success(`Welcome to ApplyAI Pro, ${details.payer.name.given_name}!`);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-      toast.error('Failed to upgrade plan');
+    } catch (error: any) {
+      console.error('Upgrade Error:', error);
+      toast.error(error.message || 'Failed to upgrade plan');
     }
   };
 

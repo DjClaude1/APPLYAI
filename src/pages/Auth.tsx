@@ -58,14 +58,14 @@ export default function Auth() {
     }
   };
 
-  const isConfigMissing = !import.meta.env.VITE_FIREBASE_API_KEY;
+  const isConfigMissing = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 py-12">
       <Card className="w-full max-w-md">
         {isConfigMissing && (
           <div className="p-4 bg-destructive/10 border-b border-destructive/20 text-destructive text-sm font-medium text-center">
-            Firebase credentials missing! Please set VITE_FIREBASE_API_KEY and other variables in the Secrets menu.
+            Supabase credentials missing! Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the Secrets menu.
           </div>
         )}
         <CardHeader className="text-center">

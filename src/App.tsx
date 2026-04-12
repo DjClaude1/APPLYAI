@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useState } from 'react';
 import { Toaster } from 'sonner';
+import { cn } from './lib/utils';
 import LandingPage from './pages/LandingPage';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
@@ -10,18 +12,46 @@ import CoverLetter from './pages/CoverLetter';
 import Settings from './pages/Settings';
 import PublicResume from './pages/PublicResume';
 import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
+
+function AppLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  return (
+    <div className="min-h-screen bg-background font-sans antialiased">
+      {user && (
+        <Sidebar 
+          isOpen={isSidebarOpen} 
+          onClose={() => setIsSidebarOpen(false)} 
+          isCollapsed={isCollapsed}
+          setIsCollapsed={setIsCollapsed}
+        />
+      )}
+      <div className={cn(
+        "transition-all duration-300",
+        user ? (isCollapsed ? "ml-0 md:ml-16" : "ml-0 md:ml-64") : ""
+      )}>
+        <Navbar onMenuClick={() => setIsSidebarOpen(true)} />
+        <main>
+          {children}
+        </main>
+        <Toaster position="top-center" />
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <AuthProvider>
       <PayPalScriptProvider options={{ "clientId": import.meta.env.VITE_PAYPAL_CLIENT_ID || "test" }}>
         <Router>
-        <div className="min-h-screen bg-background font-sans antialiased">
-          <Navbar />
-          <main>
+          <AppLayout>
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/auth" element={<Auth />} />
@@ -83,10 +113,8 @@ export default function App() {
               />
               <Route path="/resume/:id" element={<PublicResume />} />
             </Routes>
-          </main>
-          <Toaster position="top-center" />
-        </div>
-      </Router>
+          </AppLayout>
+        </Router>
       </PayPalScriptProvider>
     </AuthProvider>
   );

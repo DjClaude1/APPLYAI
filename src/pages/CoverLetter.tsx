@@ -7,15 +7,7 @@ import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { FileText, Wand2, Download, Save, Loader2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs,
-  addDoc
-} from 'firebase/firestore';
-import { db } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { supabase } from '../lib/supabase';
 import { generateAIContent } from '../lib/gemini';
 import jsPDF from 'jspdf';
 
@@ -46,16 +38,17 @@ export default function CoverLetter() {
   const fetchResumes = async () => {
     if (!user) return;
     try {
-      const q = query(
-        collection(db, 'resumes'),
-        where('uid', '==', user.uid)
-      );
-      const querySnapshot = await getDocs(q);
-      const resumesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setResumes(resumesData);
-      if (resumesData.length > 0) setSelectedResume(resumesData[0].id);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, 'resumes');
+      const { data, error } = await supabase
+        .from('resumes')
+        .select('*')
+        .eq('uid', user.id);
+
+      if (error) throw error;
+      setResumes(data || []);
+      if (data && data.length > 0) setSelectedResume(data[0].id);
+    } catch (error: any) {
+      console.error('Error fetching resumes:', error);
+      toast.error(`Failed to load resumes: ${error.message}`);
     }
   };
 
@@ -121,16 +114,22 @@ export default function CoverLetter() {
     
     setLoading(true);
     try {
-      await addDoc(collection(db, 'cover_letters'), {
-        uid: user.uid,
-        title: `Cover Letter - ${new Date().toLocaleDateString()}`,
-        content: generatedLetter,
-        created_at: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('cover_letters')
+        .insert([
+          {
+            uid: user.id,
+            title: `Cover Letter - ${new Date().toLocaleDateString()}`,
+            content: generatedLetter,
+            created_at: new Date().toISOString()
+          }
+        ]);
 
+      if (error) throw error;
       toast.success('Cover letter saved to your library!');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'cover_letters');
+    } catch (error: any) {
+      console.error('Error saving cover letter:', error);
+      toast.error(error.message || 'Failed to save cover letter');
     } finally {
       setLoading(false);
     }

@@ -5,18 +5,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot,
-  deleteDoc,
-  doc
-} from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import {
   Dialog,
   DialogContent,
@@ -124,42 +114,53 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'resumes'),
-      where('uid', '==', user.uid),
-      orderBy('updated_at', 'desc')
-    );
+    const fetchResumes = async () => {
+      const { data, error } = await supabase
+        .from('resumes')
+        .select('*')
+        .eq('uid', user.id)
+        .order('updated_at', { ascending: false });
 
-    const unsubscribeResumes = onSnapshot(q, (snapshot) => {
-      const resumesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setResumes(resumesData);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'resumes');
-    });
+      if (error) {
+        console.error('Error fetching resumes:', error);
+        toast.error(`Failed to load resumes: ${error.message}`);
+      } else {
+        setResumes(data || []);
+      }
+    };
 
-    const qApps = query(
-      collection(db, 'applications'),
-      where('uid', '==', user.uid)
-    );
+    const fetchApplications = async () => {
+      const { data, error } = await supabase
+        .from('applications')
+        .select('*')
+        .eq('uid', user.id);
 
-    const unsubscribeApps = onSnapshot(qApps, (snapshot) => {
-      const appsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setApplications(appsData);
+      if (error) {
+        console.error('Error fetching applications:', error);
+        toast.error(`Failed to load applications: ${error.message}`);
+      } else {
+        setApplications(data || []);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'applications');
-      setLoading(false);
-    });
+    };
+
+    fetchResumes();
+    fetchApplications();
+
+    // Set up real-time subscriptions
+    const resumesSubscription = supabase
+      .channel('resumes_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resumes', filter: `uid=eq.${user.id}` }, fetchResumes)
+      .subscribe();
+
+    const appsSubscription = supabase
+      .channel('apps_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications', filter: `uid=eq.${user.id}` }, fetchApplications)
+      .subscribe();
 
     return () => {
-      unsubscribeResumes();
-      unsubscribeApps();
+      supabase.removeChannel(resumesSubscription);
+      supabase.removeChannel(appsSubscription);
     };
   }, [user]);
 
@@ -167,11 +168,16 @@ export default function Dashboard() {
     if (!window.confirm('Are you sure you want to delete this resume?')) return;
     
     try {
-      await deleteDoc(doc(db, 'resumes', id));
+      const { error } = await supabase
+        .from('resumes')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
       toast.success('Resume deleted');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `resumes/${id}`);
-      toast.error('Failed to delete resume');
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Failed to delete resume');
     }
   };
 

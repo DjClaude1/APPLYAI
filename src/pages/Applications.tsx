@@ -5,20 +5,8 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Briefcase, Calendar, MapPin, MoreVertical, ExternalLink, Trash2 } from 'lucide-react';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot,
-  deleteDoc,
-  doc,
-  updateDoc,
-  increment
-} from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 interface Application {
   id: string;
@@ -37,42 +25,65 @@ export default function Applications() {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'applications'),
-      where('uid', '==', user.uid),
-      orderBy('applied_at', 'desc')
-    );
+    const fetchApplications = async () => {
+      const { data, error } = await supabase
+        .from('applications')
+        .select('*')
+        .eq('uid', user.id)
+        .order('applied_at', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const appsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Application[];
-      setApplications(appsData);
+      if (error) {
+        console.error('Error fetching applications:', error);
+        toast.error('Failed to load applications');
+      } else {
+        setApplications(data || []);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'applications');
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchApplications();
+
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel('applications_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications', filter: `uid=eq.${user.id}` }, fetchApplications)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, [user]);
 
   const handleDelete = async (id: string) => {
     if (!user) return;
     try {
-      await deleteDoc(doc(db, 'applications', id));
+      const { error: deleteError } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) throw deleteError;
 
       // Update user application count
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        application_count: increment(-1)
-      });
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('application_count')
+        .eq('id', user.id)
+        .single();
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          application_count: Math.max(0, (profile?.application_count || 1) - 1)
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
 
       toast.success('Application removed.');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `applications/${id}`);
-      toast.error('Failed to remove application.');
+    } catch (error: any) {
+      console.error('Delete Error:', error);
+      toast.error(error.message || 'Failed to remove application.');
     }
   };
 
