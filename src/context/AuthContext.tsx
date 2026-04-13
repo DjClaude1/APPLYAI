@@ -60,7 +60,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else if (data) {
         setUserData(data);
       } else {
-        setUserData(null);
+        // Create profile if it doesn't exist (e.g. first time OAuth login)
+        const currentUser = (await supabase.auth.getUser()).data.user;
+        if (currentUser) {
+          const isAdminEmail = currentUser.email === 'claudemuteb2@gmail.com';
+          const { data: newProfile, error: insertError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                id: currentUser.id,
+                email: currentUser.email,
+                display_name: currentUser.user_metadata.full_name || currentUser.email?.split('@')[0],
+                plan: isAdminEmail ? 'pro' : 'free',
+                resume_count: 0,
+                application_count: 0,
+              }
+            ])
+            .select()
+            .single();
+          
+          if (!insertError) {
+            setUserData(newProfile);
+          }
+        }
       }
     } catch (err) {
       console.error('Unexpected error fetching user data:', err);
@@ -114,6 +136,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
       
       if (data.user) {
+        // Automatically grant Pro plan to specific admin email
+        const isAdminEmail = data.user.email === 'claudemuteb2@gmail.com';
+        
         // Create profile
         const { error: profileError } = await supabase
           .from('profiles')
@@ -122,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: data.user.id,
               email: data.user.email,
               display_name: name,
-              plan: 'free',
+              plan: isAdminEmail ? 'pro' : 'free',
               resume_count: 0,
               application_count: 0,
             }
@@ -143,6 +168,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      // Clear all local app data
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = '/';
     } catch (error: any) {
       console.error(error);
     }

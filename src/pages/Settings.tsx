@@ -61,6 +61,10 @@ export default function Settings() {
 
   const handleDowngrade = async () => {
     if (!user) return;
+    if (user.email === 'claudemuteb2@gmail.com') {
+      toast.error('Admin accounts cannot be downgraded.');
+      return;
+    }
     setLoading(true);
     try {
       const { error } = await supabase
