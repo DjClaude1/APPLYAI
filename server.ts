@@ -11,7 +11,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
   
   // API routes
@@ -48,6 +50,18 @@ async function startServer() {
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Error handling middleware to ensure JSON responses
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && 'status' in err && 'body' in err) {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    if (err.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'Payload too large. Please try a smaller file or reduce image quality.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
   });
 
   // Vite middleware for development

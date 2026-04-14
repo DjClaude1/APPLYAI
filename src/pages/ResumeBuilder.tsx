@@ -11,7 +11,6 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
-import { supabaseAI } from '../lib/supabaseAI';
 import { generateAIContent, cleanJson } from '../lib/gemini';
 import { Type } from '@google/genai';
 import jsPDF from 'jspdf';
@@ -71,9 +70,6 @@ export default function ResumeBuilder() {
   const [shareEmail, setShareEmail] = useState('');
   const [sharePhone, setSharePhone] = useState('');
 
-  const isAdmin = user?.email === 'claudemuteb2@gmail.com';
-  const hasPro = userData?.plan === 'pro' || isAdmin;
-
   // Load existing resume if ID is present
   React.useEffect(() => {
     const loadResume = async () => {
@@ -86,11 +82,7 @@ export default function ResumeBuilder() {
           .eq('id', id)
           .single();
 
-        if (error) {
-          console.error('Error loading resume:', error);
-          toast.error(`Failed to load resume: ${error.message}`);
-          throw error;
-        }
+        if (error) throw error;
 
         if (data) {
           if (data.uid === user.id) {
@@ -288,15 +280,10 @@ export default function ResumeBuilder() {
       });
 
       if (!result.success) {
-        // Fallback to Supabase AI if direct Gemini fails
-        const sbResult = await supabaseAI.generateContent(prompt, { jsonMode: true });
-        if (!sbResult.success) {
-          throw new Error(sbResult.error || 'Failed to generate AI content');
-        }
-        result.text = sbResult.text;
+        throw new Error(result.error || 'Failed to generate AI content');
       }
 
-      const aiResult = JSON.parse(cleanJson(result.text || '{}'));
+      const aiResult = JSON.parse(cleanJson(result.text));
       setResumeData(prev => ({
         ...prev,
         summary: aiResult.summary,
@@ -317,7 +304,7 @@ export default function ResumeBuilder() {
     if (!user) return;
     
     // Check limits for free plan
-    if (!id && !hasPro && (userData?.resume_count || 0) >= 1) {
+    if (!id && userData?.plan === 'free' && (userData?.resume_count || 0) >= 1) {
       toast.error('You have reached the limit of 1 resume on the Free plan. Please upgrade to Pro.');
       return;
     }
@@ -380,15 +367,37 @@ export default function ResumeBuilder() {
 
     setLoading(true);
     try {
-      const canvas = await html2canvas(element, { scale: 2 });
+      const canvas = await html2canvas(element, { 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        allowTaint: true
+      });
+      
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${resumeData.fullName.replace(' ', '_')}_Resume.pdf`);
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Extra pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`${(resumeData.fullName || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`);
       toast.success('PDF exported successfully!');
     } catch (error) {
       console.error(error);
@@ -399,7 +408,7 @@ export default function ResumeBuilder() {
   };
 
   const handleShareEmail = async () => {
-    if (!hasPro) {
+    if (userData?.plan !== 'pro') {
       toast.error('Sharing via Email is a Pro feature.');
       return;
     }
@@ -413,13 +422,35 @@ export default function ResumeBuilder() {
 
     setLoading(true);
     try {
-      const canvas = await html2canvas(element, { scale: 2 });
+      const canvas = await html2canvas(element, { 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        allowTaint: true
+      });
+      
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Extra pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
       
       const pdfBase64 = pdf.output('datauristring').split(',')[1];
       const fileName = `${resumeData.fullName.replace(/\s+/g, '_')}_Resume.pdf`;
@@ -436,12 +467,19 @@ export default function ResumeBuilder() {
         })
       });
 
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}...`);
+      }
+
       const result = await response.json();
       if (result.success) {
         toast.success('Resume sent successfully to ' + shareEmail);
         setIsShareDialogOpen(false);
       } else {
-        throw new Error(result.error || 'Failed to send email');
+        const errorMsg = typeof result.error === 'object' ? (result.error.message || JSON.stringify(result.error)) : result.error;
+        throw new Error(errorMsg || 'Failed to send email');
       }
     } catch (error: any) {
       console.error(error);
@@ -452,7 +490,7 @@ export default function ResumeBuilder() {
   };
 
   const handleShareWhatsApp = () => {
-    if (!hasPro) {
+    if (userData?.plan !== 'pro') {
       toast.error('Sharing via WhatsApp is a Pro feature.');
       return;
     }
@@ -586,15 +624,10 @@ export default function ResumeBuilder() {
       });
 
       if (!result.success) {
-        // Fallback to Supabase AI if direct Gemini fails
-        const sbResult = await supabaseAI.generateContent(prompt, { jsonMode: true });
-        if (!sbResult.success) {
-          throw new Error(sbResult.error || 'Failed to parse resume content');
-        }
-        result.text = sbResult.text;
+        throw new Error(result.error || 'Failed to parse resume content');
       }
 
-      const parsedData = JSON.parse(cleanJson(result.text || '{}'));
+      const parsedData = JSON.parse(cleanJson(result.text));
       setResumeData(prev => ({
         ...prev,
         ...parsedData,
@@ -674,7 +707,7 @@ export default function ResumeBuilder() {
                       <TemplateOption 
                         active={resumeData.template === 'classic'} 
                         onClick={() => {
-                          if (!hasPro) {
+                          if (userData?.plan !== 'pro') {
                             toast.error('Classic template is a Pro feature.');
                             return;
                           }
@@ -682,12 +715,12 @@ export default function ResumeBuilder() {
                         }}
                         label="Classic"
                         description="Traditional serif style"
-                        isPro={!hasPro}
+                        isPro={userData?.plan !== 'pro'}
                       />
                       <TemplateOption 
                         active={resumeData.template === 'creative'} 
                         onClick={() => {
-                          if (!hasPro) {
+                          if (userData?.plan !== 'pro') {
                             toast.error('Creative template is a Pro feature.');
                             return;
                           }
@@ -695,12 +728,12 @@ export default function ResumeBuilder() {
                         }}
                         label="Creative"
                         description="Bold & unique"
-                        isPro={!hasPro}
+                        isPro={userData?.plan !== 'pro'}
                       />
                       <TemplateOption 
                         active={resumeData.template === 'minimal'} 
                         onClick={() => {
-                          if (!hasPro) {
+                          if (userData?.plan !== 'pro') {
                             toast.error('Minimal template is a Pro feature.');
                             return;
                           }
@@ -708,12 +741,12 @@ export default function ResumeBuilder() {
                         }}
                         label="Minimal"
                         description="Simple & elegant"
-                        isPro={!hasPro}
+                        isPro={userData?.plan !== 'pro'}
                       />
                       <TemplateOption 
                         active={resumeData.template === 'executive'} 
                         onClick={() => {
-                          if (!hasPro) {
+                          if (userData?.plan !== 'pro') {
                             toast.error('Executive template is a Pro feature.');
                             return;
                           }
@@ -721,7 +754,7 @@ export default function ResumeBuilder() {
                         }}
                         label="Executive"
                         description="High-level authority"
-                        isPro={!hasPro}
+                        isPro={userData?.plan !== 'pro'}
                       />
                     </div>
                   </div>
@@ -729,19 +762,19 @@ export default function ResumeBuilder() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <Label className="text-lg font-bold">Typography</Label>
-                      {!hasPro && <Badge variant="secondary">PRO FEATURE</Badge>}
+                      {userData?.plan !== 'pro' && <Badge variant="secondary">PRO FEATURE</Badge>}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {['sans', 'serif', 'mono', 'display'].map((f) => (
                         <button
                           key={f}
-                          disabled={!hasPro}
+                          disabled={userData?.plan !== 'pro'}
                           onClick={() => setResumeData(p => ({ ...p, font: f }))}
                           className={`p-3 rounded-lg border text-center transition-all ${
                             resumeData.font === f 
                               ? 'border-primary bg-primary/5 ring-1 ring-primary' 
                               : 'border-muted hover:border-primary/30'
-                          } ${!hasPro ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${userData?.plan !== 'pro' ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           <span className={`text-sm font-${f} capitalize`}>{f}</span>
                         </button>
@@ -992,14 +1025,14 @@ export default function ResumeBuilder() {
             </CardHeader>
             <CardContent className="p-0 bg-muted/20">
               <div className="p-8 flex justify-center">
-                <div id="resume-preview" className="shadow-2xl">
-                  {resumeData.template === 'modern' && <ModernTemplate resumeData={resumeData} previewId="resume-preview" />}
-                  {resumeData.template === 'classic' && <ClassicTemplate resumeData={resumeData} previewId="resume-preview" />}
-                  {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} previewId="resume-preview" />}
-                  {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} previewId="resume-preview" />}
-                  {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} previewId="resume-preview" />}
+                <div id="resume-preview" className="shadow-2xl bg-white">
+                    {resumeData.template === 'modern' && <ModernTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'classic' && <ClassicTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} previewId="resume-preview" />}
+                  </div>
                 </div>
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -1011,7 +1044,7 @@ export default function ResumeBuilder() {
             <DialogTitle>Share Resume</DialogTitle>
             <DialogDescription>
               Send your resume directly to hiring managers.
-              {!hasPro && (
+              {userData?.plan !== 'pro' && (
                 <Badge variant="secondary" className="ml-2">PRO FEATURE</Badge>
               )}
             </DialogDescription>
@@ -1026,9 +1059,9 @@ export default function ResumeBuilder() {
                   placeholder="hiring@company.com" 
                   value={shareEmail}
                   onChange={(e) => setShareEmail(e.target.value)}
-                  disabled={!hasPro || loading}
+                  disabled={userData?.plan !== 'pro' || loading}
                 />
-                <Button onClick={handleShareEmail} disabled={!hasPro || loading}>
+                <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro' || loading}>
                   {loading ? <Loader2 className="animate-spin" size={16} /> : 'Send'}
                 </Button>
               </div>
@@ -1042,13 +1075,13 @@ export default function ResumeBuilder() {
                   placeholder="+1234567890" 
                   value={sharePhone}
                   onChange={(e) => setSharePhone(e.target.value)}
-                  disabled={!hasPro || loading}
+                  disabled={userData?.plan !== 'pro' || loading}
                 />
-                <Button onClick={handleShareWhatsApp} disabled={!hasPro || loading}>Send</Button>
+                <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro' || loading}>Send</Button>
               </div>
             </div>
           </div>
-          {!hasPro && (
+          {userData?.plan !== 'pro' && (
             <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
               <p className="text-xs text-center font-medium">
                 Upgrade to <span className="text-primary font-bold">PRO</span> to unlock direct sharing features.

@@ -8,7 +8,6 @@ import { Badge } from '../components/ui/badge';
 import { Search, MapPin, Briefcase, Zap, CheckCircle2, Loader2, ExternalLink, Navigation, FileWarning, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
-import { supabaseAI } from '../lib/supabaseAI';
 import { generateAIContent, cleanJson } from '../lib/gemini';
 import { Type } from '@google/genai';
 import jsPDF from 'jspdf';
@@ -81,9 +80,6 @@ export default function JobSearch() {
   const [recruiterEmail, setRecruiterEmail] = useState('');
   const [isGuessingEmail, setIsGuessingEmail] = useState(false);
 
-  const isAdmin = user?.email === 'claudemuteb2@gmail.com';
-  const hasPro = userData?.plan === 'pro' || isAdmin;
-
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user) return;
@@ -125,44 +121,55 @@ export default function JobSearch() {
 
     setLoading(true);
     try {
-      // Try direct Gemini API first for actual data
-      const prompt = `Find 10 real, current job openings for "${searchTerm}" in "${locationTerm || 'Remote'}". 
-      Include: title, company, location, type, salary, description, postedAt, link, source.
-      Return ONLY a JSON array of objects.`;
+      const prompt = `Search for 12-15 REAL, CURRENT job openings for "${searchTerm}" ${locationTerm ? `in "${locationTerm}"` : '(Remote or Anywhere)'}. 
+      
+      CRITICAL INSTRUCTIONS:
+      1. SOURCE DIVERSITY: Provide a wide variety of sources. Include listings from LinkedIn, Indeed, Gumtree, Google Search results, and direct Company Career pages. Do NOT include Glassdoor, Reed, Monster, Totaljobs, or ZipRecruiter.
+      2. DIRECT URLS ONLY: ONLY return jobs where you have found a direct, functional URL to the SPECIFIC job posting. DO NOT guess, construct, or hallucinate URLs. 
+      3. NO SEARCH PAGES: Do not return URLs that point to search results pages. The URL must point to a single, specific job listing.
+      4. NO MOCK DATA: Every single job must be a real, live opening as of today.
+      5. VERIFICATION: Double-check that the URL is a direct link to the job description.
+      6. QUANTITY: Try to find at least 12 high-quality matches if they exist.
 
-      let result = await generateAIContent(prompt, { jsonMode: true });
+      Filters to apply:
+      - Job Type: ${jobType === 'all' ? 'Any' : jobType}
+      - Salary Range: ${minSalary || maxSalary ? `$${minSalary || 0} - $${maxSalary || 'Any'}` : (salaryRange === 'all' ? 'Any' : salaryRange)}
+      - Date Posted: ${datePosted === 'all' ? 'Any' : datePosted}
+      - Remote Only: ${remoteOnly ? 'Yes' : 'No'}
+      - Sort By: ${sortBy}
+      - Industry: ${industry === 'all' ? 'Any' : industry}
+      - Seniority Level: ${seniority === 'all' ? 'Any' : seniority}
+      - Company Size: ${companySize === 'all' ? 'Any' : companySize}`;
+
+      const result = await generateAIContent(prompt, {
+        useSearch: true,
+        jsonMode: true,
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              title: { type: Type.STRING },
+              company: { type: Type.STRING },
+              location: { type: Type.STRING },
+              type: { type: Type.STRING },
+              salary: { type: Type.STRING },
+              description: { type: Type.STRING },
+              postedAt: { type: Type.STRING },
+              link: { type: Type.STRING, description: "The EXACT direct URL to the job posting found in search results" },
+              source: { type: Type.STRING, description: "The specific site name (e.g., LinkedIn, Glassdoor, Company Website)" }
+            },
+            required: ["id", "title", "company", "location", "type", "salary", "description", "postedAt", "link", "source"]
+          }
+        }
+      });
 
       if (!result.success) {
-        // Fallback to Supabase AI if direct Gemini fails
-        const sbResult = await supabaseAI.searchJobs(searchTerm, locationTerm, {
-          jobType,
-          minSalary,
-          maxSalary,
-          salaryRange,
-          datePosted,
-          remoteOnly,
-          sortBy,
-          industry,
-          seniority,
-          companySize
-        });
-
-        if (!sbResult.success) {
-          throw new Error(sbResult.error || 'Failed to fetch jobs');
-        }
-        
-        result = {
-          success: true,
-          text: JSON.stringify(sbResult.jobs),
-          isFallback: sbResult.isFallback
-        } as any;
+        throw new Error(result.error || 'Failed to fetch jobs');
       }
 
-      if ((result as any).isFallback) {
-        toast.info('Using sample data while Supabase functions are being deployed.');
-      }
-
-      const jobsData = JSON.parse(cleanJson(result.text || '[]'));
+      const jobsData = JSON.parse(cleanJson(result.text));
       const validatedJobs = (Array.isArray(jobsData) ? jobsData : []).map((job: any, index: number) => ({
         ...job,
         id: job.id || `job-${Date.now()}-${index}`
@@ -186,27 +193,57 @@ export default function JobSearch() {
     
     setLoadingMore(true);
     try {
-      const result = await supabaseAI.searchJobs(searchTerm, locationTerm, {
-        jobType,
-        minSalary,
-        maxSalary,
-        salaryRange,
-        datePosted,
-        remoteOnly,
-        sortBy,
-        industry,
-        seniority,
-        companySize,
-        offset: jobs.length
+      const existingTitles = jobs.map(j => j.title).join(', ');
+      const prompt = `Search for 10 MORE REAL, CURRENT job openings for "${searchTerm}" ${locationTerm ? `in "${locationTerm}"` : '(Remote or Anywhere)'}. 
+      
+      CRITICAL: These MUST be different from the following jobs already found: ${existingTitles.substring(0, 500)}.
+      
+      INSTRUCTIONS:
+      1. SOURCE DIVERSITY: Use a mix of LinkedIn, Indeed, Gumtree, Google Search results, etc. Do NOT include Glassdoor, Reed, Monster, Totaljobs, or ZipRecruiter.
+      2. DIRECT URLS ONLY: No search pages, only specific job listings.
+      3. NO MOCK DATA: Real, live openings only.`;
+
+      const result = await generateAIContent(prompt, {
+        useSearch: true,
+        jsonMode: true,
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              title: { type: Type.STRING },
+              company: { type: Type.STRING },
+              location: { type: Type.STRING },
+              type: { type: Type.STRING },
+              salary: { type: Type.STRING },
+              description: { type: Type.STRING },
+              postedAt: { type: Type.STRING },
+              link: { type: Type.STRING },
+              source: { type: Type.STRING }
+            },
+            required: ["id", "title", "company", "location", "type", "salary", "description", "postedAt", "link", "source"]
+          }
+        }
       });
 
-      if (result.success && Array.isArray(result.jobs)) {
-        const validatedMoreJobs = result.jobs.map((job: any, index: number) => ({
-          ...job,
-          id: job.id || `job-more-${Date.now()}-${index}`
-        }));
-        setJobs(prev => [...prev, ...validatedMoreJobs]);
-        toast.success(`Found ${validatedMoreJobs.length} more jobs!`);
+      if (result.success) {
+        try {
+          const moreJobs = JSON.parse(cleanJson(result.text));
+          if (Array.isArray(moreJobs) && moreJobs.length > 0) {
+            const validatedMoreJobs = moreJobs.map((job: any, index: number) => ({
+              ...job,
+              id: job.id || `job-more-${Date.now()}-${index}`
+            }));
+            setJobs(prev => [...prev, ...validatedMoreJobs]);
+            toast.success(`Found ${validatedMoreJobs.length} more jobs!`);
+          } else {
+            toast.info('No more unique jobs found.');
+          }
+        } catch (e) {
+          console.error('JSON Parse Error in Load More:', e);
+          toast.error('Failed to parse additional jobs.');
+        }
       }
     } catch (error) {
       console.error('Load More Error:', error);
@@ -226,13 +263,14 @@ export default function JobSearch() {
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          const result = await supabaseAI.reverseGeocode(latitude, longitude);
+          // Use reverse geocoding via AI
+          const result = await generateAIContent(`What city and state is at coordinates ${latitude}, ${longitude}? Return only "City, State".`);
           
           if (result.success) {
-            setLocationTerm(result.location || '');
+            setLocationTerm(result.text.trim());
             toast.success('Location updated!');
           } else {
-            throw new Error('Failed to identify location via Supabase');
+            throw new Error('Failed to identify location');
           }
         } catch (error) {
           console.error(error);
@@ -261,9 +299,9 @@ export default function JobSearch() {
       If you can't find one, suggest a standard one like careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com or hr@${job.company.toLowerCase().replace(/\s+/g, '')}.com.
       Return ONLY the email address.`;
       
-      const result = await supabaseAI.generateContent(emailPrompt);
+      const result = await generateAIContent(emailPrompt);
       if (result.success) {
-        setRecruiterEmail((result.text || '').trim().toLowerCase());
+        setRecruiterEmail(result.text.trim().toLowerCase());
       } else {
         setRecruiterEmail(`careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com`);
       }
@@ -300,13 +338,35 @@ export default function JobSearch() {
       // Wait a bit for the template to render
       await new Promise(resolve => setTimeout(resolve, 800));
 
-      const canvas = await html2canvas(element, { scale: 2 });
+      const canvas = await html2canvas(element, { 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        allowTaint: true
+      });
+      
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Extra pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
       
       const pdfBase64 = pdf.output('datauristring').split(',')[1];
       const fileName = `${(selectedResume.content?.fullName || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`;
@@ -331,9 +391,16 @@ export default function JobSearch() {
         })
       });
 
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}...`);
+      }
+
       const result = await response.json();
       if (!result.success) {
-        throw new Error(result.error || 'Failed to send application email');
+        const errorMsg = typeof result.error === 'object' ? (result.error.message || JSON.stringify(result.error)) : result.error;
+        throw new Error(errorMsg || 'Failed to send application email');
       }
 
       // 4. Record in Supabase
@@ -349,6 +416,7 @@ export default function JobSearch() {
               status: 'applied',
               applied_at: new Date().toISOString(),
               recruiter_email: recruiterEmail,
+              job_link: job.link,
               resume_id: selectedResumeId,
               cover_letter_id: selectedCoverLetterId !== 'none' ? selectedCoverLetterId : null
             }
@@ -615,7 +683,7 @@ export default function JobSearch() {
                           {applyingId === job.id ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
                           Auto Apply
                         </Button>
-                        {!hasPro && (userData?.application_count || 0) >= 2 && (
+                        {userData?.plan === 'free' && (userData?.application_count || 0) >= 2 && (
                           <p className="text-[10px] text-amber-600 font-medium text-center">
                             {3 - (userData?.application_count || 0)} application left on Free plan
                           </p>
@@ -666,9 +734,9 @@ export default function JobSearch() {
       )}
 
       {/* Hidden preview for PDF generation during apply - kept in DOM but off-screen for html2canvas */}
-      <div className="absolute opacity-0 pointer-events-none -z-50 overflow-hidden h-0 w-0">
+      <div className="fixed left-[-9999px] top-0 opacity-0 pointer-events-none -z-50">
         {userResumes.find(r => r.id === selectedResumeId) && (
-          <div id="resume-preview-apply-hidden" style={{ width: '794px' }}>
+          <div id="resume-preview-apply-hidden" style={{ width: '794px' }} className="bg-white">
             {userResumes.find(r => r.id === selectedResumeId).content.template === 'modern' && <ModernTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
             {userResumes.find(r => r.id === selectedResumeId).content.template === 'classic' && <ClassicTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}
             {userResumes.find(r => r.id === selectedResumeId).content.template === 'creative' && <CreativeTemplate resumeData={userResumes.find(r => r.id === selectedResumeId).content} previewId="resume-preview-apply-hidden" />}

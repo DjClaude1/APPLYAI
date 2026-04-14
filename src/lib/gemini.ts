@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 // In Vite, process.env might not be defined in the browser.
 // The platform usually shims it, but we'll be safe.

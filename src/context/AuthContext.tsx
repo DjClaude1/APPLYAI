@@ -23,9 +23,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserData(session.user.id);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchUserData(currentUser.id);
       } else {
         setLoading(false);
       }
@@ -47,57 +48,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserData = async (userId: string, retryCount = 0) => {
+  // Force admin promotion in state immediately if email matches
+  useEffect(() => {
+    if (user?.email === 'gameeater36@gmail.com') {
+      if (!userData) {
+        // If userData is not loaded yet, provide a skeleton for the admin
+        setUserData({
+          email: user.email,
+          role: 'admin',
+          plan: 'pro',
+          resume_count: 0,
+          application_count: 0
+        });
+      } else if (userData.role !== 'admin' || userData.plan !== 'pro') {
+        setUserData(prev => ({ ...prev, role: 'admin', plan: 'pro' }));
+      }
+    }
+  }, [user, userData]);
+
+  const fetchUserData = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching profiles:', error);
-        setLoading(false);
-        return;
-      } 
-      
+      if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const isAdmin = user?.email === 'gameeater36@gmail.com';
+        const { data: newData, error: createError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: userId,
+              email: user?.email,
+              display_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+              role: isAdmin ? 'admin' : 'user',
+              plan: isAdmin ? 'pro' : 'free',
+              resume_count: 0,
+              application_count: 0,
+            }
+          ])
+          .select()
+          .single();
+        
+        if (!createError) {
+          data = newData;
+        }
+      }
+
       if (data) {
-        setUserData(data);
-        setLoading(false);
-      } else if (retryCount < 3) {
-        // Trigger might still be running, wait and retry
-        console.log(`Profile not found, retrying... (${retryCount + 1}/3)`);
-        setTimeout(() => fetchUserData(userId, retryCount + 1), 1000);
-      } else {
-        // Create profile if it still doesn't exist after retries
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (currentUser) {
-          const isAdminEmail = currentUser.email === 'claudemuteb2@gmail.com';
-          const { data: newProfile, error: insertError } = await supabase
+        // Check if this is the admin user and needs promotion
+        const isAdminEmail = data.email === 'gameeater36@gmail.com';
+        if (isAdminEmail && (data.role !== 'admin' || data.plan !== 'pro')) {
+          const { data: updatedData, error: updateError } = await supabase
             .from('profiles')
-            .upsert([
-              {
-                id: currentUser.id,
-                email: currentUser.email,
-                display_name: currentUser.user_metadata.full_name || currentUser.email?.split('@')[0],
-                plan: isAdminEmail ? 'pro' : 'free',
-                resume_count: 0,
-                application_count: 0,
-              }
-            ])
+            .update({ role: 'admin', plan: 'pro' })
+            .eq('id', userId)
             .select()
             .single();
           
-          if (!insertError) {
-            setUserData(newProfile);
-          } else {
-            console.error('Error creating profile manually:', insertError);
+          if (!updateError && updatedData) {
+            setUserData(updatedData);
+            return;
           }
         }
-        setLoading(false);
+        
+        // Fallback: Force Pro plan in state for the admin email even if DB update fails
+        if (isAdminEmail) {
+          setUserData({ ...data, role: 'admin', plan: 'pro' });
+        } else {
+          setUserData(data);
+        }
+      } else {
+        setUserData(null);
       }
     } catch (err) {
       console.error('Unexpected error fetching user data:', err);
+    } finally {
       setLoading(false);
     }
   };
@@ -107,11 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
-          queryParams: {
-            prompt: 'select_account',
-            access_type: 'offline',
-          }
+          redirectTo: window.location.origin
         }
       });
       if (error) throw error;
@@ -151,7 +176,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
       
       if (data.user) {
-        toast.success('Account created! Please check your email for a confirmation link.');
+        // Create profile
+        const isAdmin = data.user.email === 'gameeater36@gmail.com';
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: data.user.id,
+              email: data.user.email,
+              display_name: name,
+              role: isAdmin ? 'admin' : 'user',
+              plan: isAdmin ? 'pro' : 'free',
+              resume_count: 0,
+              application_count: 0,
+            }
+          ]);
+        
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+        }
       }
     } catch (error: any) {
       console.error(error);
@@ -164,10 +207,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      // Clear all local app data
-      localStorage.clear();
-      sessionStorage.clear();
-      window.location.href = '/';
     } catch (error: any) {
       console.error(error);
     }

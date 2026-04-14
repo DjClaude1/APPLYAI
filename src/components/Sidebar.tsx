@@ -7,7 +7,8 @@ import {
   Settings, 
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +25,7 @@ export default function Sidebar({
   isCollapsed: boolean,
   setIsCollapsed: (val: boolean) => void
 }) {
-  const { user, logout } = useAuth();
+  const { user, userData, logout } = useAuth();
   const location = useLocation();
 
   if (!user) return null;
@@ -36,6 +37,10 @@ export default function Sidebar({
     { name: 'Cover Letter', path: '/cover-letter', icon: FileText },
     { name: 'Applications', path: '/applications', icon: Briefcase },
   ];
+
+  if (userData?.role === 'admin') {
+    navItems.push({ name: 'Admin', path: '/admin', icon: ShieldCheck });
+  }
 
   return (
     <>

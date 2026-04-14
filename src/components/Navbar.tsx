@@ -1,10 +1,11 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
-import { FileText, Search, LayoutDashboard, Settings, LogOut, Briefcase, Menu } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { FileText, Search, LayoutDashboard, Settings, LogOut, Briefcase, Menu, ShieldCheck } from 'lucide-react';
 
 export default function Navbar({ onMenuClick }: { onMenuClick?: () => void }) {
-  const { user, login, logout } = useAuth();
+  const { user, userData, login, logout } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -23,6 +24,11 @@ export default function Navbar({ onMenuClick }: { onMenuClick?: () => void }) {
               </div>
               <span>ApplyAI</span>
             </Link>
+          )}
+          {userData?.role === 'admin' && (
+            <Badge variant="outline" className="hidden sm:flex items-center gap-1 border-primary text-primary bg-primary/5">
+              <ShieldCheck size={12} /> Admin Mode
+            </Badge>
           )}
         </div>
 

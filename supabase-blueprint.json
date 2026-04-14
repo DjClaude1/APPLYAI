@@ -6,6 +6,7 @@
         "id": "uuid primary key references auth.users",
         "email": "text",
         "display_name": "text",
+        "role": "text default 'user'",
         "plan": "text default 'free'",
         "resume_count": "integer default 0",
         "application_count": "integer default 0",
@@ -35,6 +36,7 @@
         "status": "text",
         "applied_at": "timestamp with time zone default now()",
         "recruiter_email": "text",
+        "job_link": "text",
         "resume_id": "uuid references resumes(id)",
         "cover_letter_id": "uuid references cover_letters(id)"
       }

@@ -16,7 +16,7 @@ export const ModernTemplate = ({ resumeData, previewId = "resume-preview" }: Tem
     <div className="p-8 sm:p-12 flex-grow">
       {/* Header */}
       <div className="flex flex-col sm:flex-row gap-8 items-center sm:items-start mb-12">
-        {resumeData.profilePic ? (
+        {resumeData.profilePic && (
           <div className="relative">
             <img 
               src={resumeData.profilePic} 
@@ -25,10 +25,6 @@ export const ModernTemplate = ({ resumeData, previewId = "resume-preview" }: Tem
               referrerPolicy="no-referrer"
             />
             <div className="absolute -bottom-2 -right-2 w-full h-full bg-primary/10 rounded-2xl -z-0" />
-          </div>
-        ) : (
-          <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-2xl bg-slate-100 flex items-center justify-center border-2 border-dashed border-slate-300">
-            <User size={48} className="text-slate-300" />
           </div>
         )}
         <div className="flex-1 text-center sm:text-left pt-2">
@@ -241,7 +237,7 @@ export const CreativeTemplate = ({ resumeData, previewId = "resume-preview" }: T
     {/* Left Sidebar - Bold & Graphic */}
     <div className="w-full sm:w-[35%] bg-slate-900 text-white p-8 sm:p-12 flex flex-col">
       <div className="mb-12 text-center sm:text-left">
-        {resumeData.profilePic ? (
+        {resumeData.profilePic && (
           <div className="relative inline-block mb-8">
             <img 
               src={resumeData.profilePic} 
@@ -250,10 +246,6 @@ export const CreativeTemplate = ({ resumeData, previewId = "resume-preview" }: T
               referrerPolicy="no-referrer"
             />
             <div className="absolute top-2 left-2 w-full h-full rounded-full bg-primary/20 -z-0" />
-          </div>
-        ) : (
-          <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-slate-800 flex items-center justify-center border-2 border-dashed border-slate-700 mb-8 mx-auto sm:mx-0">
-            <User size={48} className="text-slate-700" />
           </div>
         )}
         <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tighter mb-2 leading-none">{resumeData.fullName}</h1>

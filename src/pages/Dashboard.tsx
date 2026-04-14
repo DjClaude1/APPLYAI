@@ -55,13 +55,35 @@ export default function Dashboard() {
 
     setSharing(true);
     try {
-      const canvas = await html2canvas(element, { scale: 2 });
+      const canvas = await html2canvas(element, { 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        allowTaint: true
+      });
+      
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Extra pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
       
       const pdfBase64 = pdf.output('datauristring').split(',')[1];
       const fileName = `${(selectedResume.content?.fullName || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`;
@@ -78,12 +100,19 @@ export default function Dashboard() {
         })
       });
 
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}...`);
+      }
+
       const result = await response.json();
       if (result.success) {
         toast.success('Resume sent successfully to ' + shareEmail);
         setIsShareDialogOpen(false);
       } else {
-        throw new Error(result.error || 'Failed to send email');
+        const errorMsg = typeof result.error === 'object' ? (result.error.message || JSON.stringify(result.error)) : result.error;
+        throw new Error(errorMsg || 'Failed to send email');
       }
     } catch (error: any) {
       console.error(error);
@@ -123,7 +152,7 @@ export default function Dashboard() {
 
       if (error) {
         console.error('Error fetching resumes:', error);
-        toast.error(`Failed to load resumes: ${error.message}`);
+        toast.error('Failed to load resumes');
       } else {
         setResumes(data || []);
       }
@@ -137,7 +166,7 @@ export default function Dashboard() {
 
       if (error) {
         console.error('Error fetching applications:', error);
-        toast.error(`Failed to load applications: ${error.message}`);
+        toast.error('Failed to load applications');
       } else {
         setApplications(data || []);
       }
@@ -413,10 +442,10 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-          {/* Hidden preview for PDF generation */}
-          <div className="hidden">
+          {/* Hidden preview for PDF generation - kept in DOM but off-screen for html2canvas */}
+          <div className="fixed left-[-9999px] top-0 opacity-0 pointer-events-none -z-50">
             {selectedResume && (
-              <div id="resume-preview-hidden">
+              <div id="resume-preview-hidden" style={{ width: '794px' }} className="bg-white">
                 {selectedResume.content.template === 'modern' && <ModernTemplate resumeData={selectedResume.content} previewId="resume-preview-hidden" />}
                 {selectedResume.content.template === 'classic' && <ClassicTemplate resumeData={selectedResume.content} previewId="resume-preview-hidden" />}
                 {selectedResume.content.template === 'creative' && <CreativeTemplate resumeData={selectedResume.content} previewId="resume-preview-hidden" />}

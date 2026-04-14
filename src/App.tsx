@@ -10,11 +10,11 @@ import JobSearch from './pages/JobSearch';
 import Applications from './pages/Applications';
 import CoverLetter from './pages/CoverLetter';
 import Settings from './pages/Settings';
+import AdminDashboard from './pages/AdminDashboard';
 import PublicResume from './pages/PublicResume';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
-import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
 
@@ -49,12 +49,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <PayPalScriptProvider options={{ "clientId": import.meta.env.VITE_PAYPAL_CLIENT_ID || "test" }}>
-          <Router>
-            <AppLayout>
-              <Routes>
+    <AuthProvider>
+      <PayPalScriptProvider options={{ "clientId": import.meta.env.VITE_PAYPAL_CLIENT_ID || "test" }}>
+        <Router>
+          <AppLayout>
+            <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/auth" element={<Auth />} />
               <Route
@@ -113,12 +112,19 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/resume/:id" element={<PublicResume />} />
             </Routes>
           </AppLayout>
         </Router>
       </PayPalScriptProvider>
     </AuthProvider>
-    </ErrorBoundary>
   );
 }

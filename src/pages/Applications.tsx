@@ -145,7 +145,13 @@ export default function Applications() {
                       </td>
                       <td className="p-4 align-middle text-right">
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => app.job_link && window.open(app.job_link, '_blank')}
+                            disabled={!app.job_link}
+                          >
                             <ExternalLink size={14} />
                           </Button>
                           <Button 
