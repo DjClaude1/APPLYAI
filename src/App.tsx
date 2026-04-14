@@ -14,6 +14,7 @@ import PublicResume from './pages/PublicResume';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
 
@@ -48,11 +49,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <PayPalScriptProvider options={{ "clientId": import.meta.env.VITE_PAYPAL_CLIENT_ID || "test" }}>
-        <Router>
-          <AppLayout>
-            <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <PayPalScriptProvider options={{ "clientId": import.meta.env.VITE_PAYPAL_CLIENT_ID || "test" }}>
+          <Router>
+            <AppLayout>
+              <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/auth" element={<Auth />} />
               <Route
@@ -117,5 +119,6 @@ export default function App() {
         </Router>
       </PayPalScriptProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }

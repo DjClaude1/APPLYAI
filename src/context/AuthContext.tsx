@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserData = async (userId: string) => {
+  const fetchUserData = async (userId: string, retryCount = 0) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -55,18 +55,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+      if (error && error.code !== 'PGRST116') {
         console.error('Error fetching profiles:', error);
-      } else if (data) {
+        setLoading(false);
+        return;
+      } 
+      
+      if (data) {
         setUserData(data);
+        setLoading(false);
+      } else if (retryCount < 3) {
+        // Trigger might still be running, wait and retry
+        console.log(`Profile not found, retrying... (${retryCount + 1}/3)`);
+        setTimeout(() => fetchUserData(userId, retryCount + 1), 1000);
       } else {
-        // Create profile if it doesn't exist (e.g. first time OAuth login)
-        const currentUser = (await supabase.auth.getUser()).data.user;
+        // Create profile if it still doesn't exist after retries
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (currentUser) {
           const isAdminEmail = currentUser.email === 'claudemuteb2@gmail.com';
           const { data: newProfile, error: insertError } = await supabase
             .from('profiles')
-            .insert([
+            .upsert([
               {
                 id: currentUser.id,
                 email: currentUser.email,
@@ -81,12 +90,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (!insertError) {
             setUserData(newProfile);
+          } else {
+            console.error('Error creating profile manually:', insertError);
           }
         }
+        setLoading(false);
       }
     } catch (err) {
       console.error('Unexpected error fetching user data:', err);
-    } finally {
       setLoading(false);
     }
   };
@@ -96,7 +107,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: 'select_account',
+            access_type: 'offline',
+          }
         }
       });
       if (error) throw error;
@@ -136,26 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
       
       if (data.user) {
-        // Automatically grant Pro plan to specific admin email
-        const isAdminEmail = data.user.email === 'claudemuteb2@gmail.com';
-        
-        // Create profile
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: data.user.id,
-              email: data.user.email,
-              display_name: name,
-              plan: isAdminEmail ? 'pro' : 'free',
-              resume_count: 0,
-              application_count: 0,
-            }
-          ]);
-        
-        if (profileError) {
-          console.error('Error creating profile:', profileError);
-        }
+        toast.success('Account created! Please check your email for a confirmation link.');
       }
     } catch (error: any) {
       console.error(error);

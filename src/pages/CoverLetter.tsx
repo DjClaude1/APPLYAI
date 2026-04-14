@@ -8,6 +8,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { FileText, Wand2, Download, Save, Loader2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import { supabaseAI } from '../lib/supabaseAI';
 import { generateAIContent } from '../lib/gemini';
 import jsPDF from 'jspdf';
 
@@ -83,7 +84,12 @@ export default function CoverLetter() {
       const result = await generateAIContent(prompt);
       
       if (!result.success) {
-        throw new Error(result.error || 'Failed to generate cover letter');
+        // Fallback to Supabase AI if direct Gemini fails
+        const sbResult = await supabaseAI.generateContent(prompt);
+        if (!sbResult.success) {
+          throw new Error(sbResult.error || 'Failed to generate cover letter');
+        }
+        result.text = sbResult.text;
       }
 
       setGeneratedLetter(result.text || '');
