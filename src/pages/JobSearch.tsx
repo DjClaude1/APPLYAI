@@ -753,6 +753,9 @@ export default function JobSearch() {
             <DialogTitle>Confirm Application</DialogTitle>
             <DialogDescription>
               Review your documents and the recipient's email before applying to <strong>{targetJob?.company}</strong>.
+              <span className="text-[10px] text-muted-foreground block mt-1 italic">
+                Note: If using a Resend testing account, you can only send to your own registered email address.
+              </span>
             </DialogDescription>
           </DialogHeader>
           

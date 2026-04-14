@@ -408,6 +408,9 @@ export default function Dashboard() {
               {userData?.plan !== 'pro' && (
                 <Badge variant="secondary" className="ml-2">PRO FEATURE</Badge>
               )}
+              <span className="text-[10px] text-muted-foreground block mt-1">
+                Note: If using a Resend testing account, you can only send to your own registered email address.
+              </span>
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-6 py-4">
