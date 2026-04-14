@@ -15,7 +15,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-  const resendFrom = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+  const resendFrom = process.env.RESEND_FROM_EMAIL || 'ApplyAI <onboarding@resend.dev>';
   
   // API routes
   app.get("/api/health", (req, res) => {
@@ -31,7 +31,7 @@ async function startServer() {
 
     try {
       const { data, error } = await resend.emails.send({
-        from: `ApplyAI <${resendFrom}>`,
+        from: resendFrom,
         to: [email],
         subject: subject || 'Resume Attachment',
         text: body || 'Please find the attached resume.',

@@ -9,8 +9,9 @@ import {
   MinimalTemplate,
   ExecutiveTemplate
 } from '../components/ResumeTemplates';
-import { Loader2, AlertCircle, Download } from 'lucide-react';
+import { Loader2, AlertCircle, Download, Share2, Mail, MessageCircle, Link as LinkIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -55,7 +56,11 @@ export default function PublicResume() {
 
     setExporting(true);
     try {
-      const canvas = await html2canvas(element, { scale: 2 });
+      const canvas = await html2canvas(element, { 
+        scale: 2,
+        useCORS: true,
+        allowTaint: true
+      });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
@@ -66,9 +71,26 @@ export default function PublicResume() {
       pdf.save(`${resumeData.fullName.replace(/\s+/g, '_')}_Resume.pdf`);
     } catch (err) {
       console.error(err);
+      toast.error('Failed to export PDF');
     } finally {
       setExporting(false);
     }
+  };
+
+  const shareViaEmail = () => {
+    const subject = encodeURIComponent(`Resume: ${resumeData?.fullName}`);
+    const body = encodeURIComponent(`Check out my resume at: ${window.location.href}`);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  const shareViaWhatsApp = () => {
+    const text = encodeURIComponent(`Check out my resume at: ${window.location.href}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    toast.success('Link copied to clipboard');
   };
 
   if (loading) {
@@ -91,7 +113,20 @@ export default function PublicResume() {
 
   return (
     <div className="min-h-screen bg-muted/30 py-12 px-4">
-      <div className="max-w-[800px] mx-auto mb-6 flex justify-end">
+      <div className="max-w-[800px] mx-auto mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Share2 size={20} className="text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">Share:</span>
+          <Button variant="outline" size="icon" onClick={shareViaEmail} title="Share via Email">
+            <Mail size={18} />
+          </Button>
+          <Button variant="outline" size="icon" onClick={shareViaWhatsApp} title="Share via WhatsApp">
+            <MessageCircle size={18} />
+          </Button>
+          <Button variant="outline" size="icon" onClick={copyLink} title="Copy Link">
+            <LinkIcon size={18} />
+          </Button>
+        </div>
         <Button onClick={exportPDF} disabled={exporting} className="gap-2">
           {exporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
           Download PDF

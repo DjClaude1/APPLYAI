@@ -2,7 +2,7 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle } from 'lucide-react';
+import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle, Link as LinkIcon, Linkedin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
@@ -120,6 +120,34 @@ export default function Dashboard() {
     } finally {
       setSharing(false);
     }
+  };
+
+  const handleQuickShareEmail = () => {
+    if (!selectedResume) return;
+    const publicUrl = `${window.location.origin}/resume/${selectedResume.id}`;
+    const subject = encodeURIComponent(`Resume: ${selectedResume.content.fullName}`);
+    const body = encodeURIComponent(`Check out my resume at: ${publicUrl}`);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  const handleQuickShareWhatsApp = () => {
+    if (!selectedResume) return;
+    const publicUrl = `${window.location.origin}/resume/${selectedResume.id}`;
+    const text = encodeURIComponent(`Check out my resume at: ${publicUrl}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const handleQuickShareLinkedIn = () => {
+    if (!selectedResume) return;
+    const publicUrl = `${window.location.origin}/resume/${selectedResume.id}`;
+    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(publicUrl)}`, '_blank');
+  };
+
+  const handleCopyLink = () => {
+    if (!selectedResume) return;
+    const publicUrl = `${window.location.origin}/resume/${selectedResume.id}`;
+    navigator.clipboard.writeText(publicUrl);
+    toast.success('Link copied to clipboard');
   };
 
   const handleShareWhatsApp = () => {
@@ -415,33 +443,63 @@ export default function Dashboard() {
           </DialogHeader>
           <div className="grid gap-6 py-4">
             <div className="space-y-4">
-              <Label className="flex items-center gap-2">
-                <Mail size={16} /> Send via Email
-              </Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quick Share Link</Label>
               <div className="flex gap-2">
-                <Input 
-                  placeholder="hiring@company.com" 
-                  value={shareEmail}
-                  onChange={(e) => setShareEmail(e.target.value)}
-                  disabled={userData?.plan !== 'pro' || sharing}
-                />
-                <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro' || sharing}>
-                  {sharing ? <Loader2 className="animate-spin" size={16} /> : 'Send'}
+                <Button variant="outline" className="flex-1 gap-2" onClick={handleQuickShareEmail}>
+                  <Mail size={16} /> Email
+                </Button>
+                <Button variant="outline" className="flex-1 gap-2" onClick={handleQuickShareWhatsApp}>
+                  <MessageCircle size={16} /> WhatsApp
+                </Button>
+                <Button variant="outline" className="flex-1 gap-2" onClick={handleQuickShareLinkedIn}>
+                  <Linkedin size={16} /> LinkedIn
+                </Button>
+                <Button variant="outline" size="icon" onClick={handleCopyLink} title="Copy Link">
+                  <LinkIcon size={16} />
                 </Button>
               </div>
             </div>
+
             <div className="space-y-4">
-              <Label className="flex items-center gap-2">
-                <MessageCircle size={16} /> Send via WhatsApp
-              </Label>
-              <div className="flex gap-2">
-                <Input 
-                  placeholder="+1234567890" 
-                  value={sharePhone}
-                  onChange={(e) => setSharePhone(e.target.value)}
-                  disabled={userData?.plan !== 'pro' || sharing}
-                />
-                <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro' || sharing}>Send</Button>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Direct Delivery (Pro)</Label>
+                {userData?.plan !== 'pro' && <Badge variant="secondary" className="text-[10px]">PRO</Badge>}
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-2">
+                    <Mail size={14} /> Send PDF via Email
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="hiring@company.com" 
+                      value={shareEmail}
+                      onChange={(e) => setShareEmail(e.target.value)}
+                      disabled={userData?.plan !== 'pro' || sharing}
+                      className="h-9 text-sm"
+                    />
+                    <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro' || sharing} size="sm">
+                      {sharing ? <Loader2 className="animate-spin" size={14} /> : 'Send'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-2">
+                    <MessageCircle size={14} /> Send Link via WhatsApp
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="+1234567890" 
+                      value={sharePhone}
+                      onChange={(e) => setSharePhone(e.target.value)}
+                      disabled={userData?.plan !== 'pro' || sharing}
+                      className="h-9 text-sm"
+                    />
+                    <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro' || sharing} size="sm">Send</Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle } from 'lucide-react';
+import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle, Link as LinkIcon, Linkedin } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { generateAIContent, cleanJson } from '../lib/gemini';
@@ -44,6 +44,7 @@ export default function ResumeBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [aiSuggestedSkills, setAiSuggestedSkills] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [resumeData, setResumeData] = useState<ResumeData>({
@@ -228,14 +229,20 @@ export default function ResumeBuilder() {
 
     setLoading(true);
     try {
-      const prompt = `Generate a professional resume summary and detailed experience descriptions for a ${resumeData.jobTitle} named ${resumeData.fullName}. 
-      Current skills: ${resumeData.skills.join(', ')}.
-      Current experience: ${JSON.stringify(resumeData.experience)}.
+      const prompt = `You are an expert resume writer. Generate a professional resume summary and detailed experience descriptions for a ${resumeData.jobTitle} named ${resumeData.fullName}. 
+      
+      CRITICAL INSTRUCTIONS:
+      1. KEYWORDS: Incorporate relevant high-impact keywords and industry-specific terminology related to the job title "${resumeData.jobTitle}" throughout the summary and experience descriptions.
+      2. SUMMARY: Create a compelling 3-4 sentence professional summary that highlights key strengths and alignment with the "${resumeData.jobTitle}" role.
+      3. EXPERIENCE: For each experience entry provided, rewrite the descriptions to be achievement-oriented, using action verbs and quantifying results where possible. Ensure the descriptions reflect the responsibilities and skills expected for a "${resumeData.jobTitle}".
+      4. SKILLS: Based on the job title "${resumeData.jobTitle}" and the user's current skills (${resumeData.skills.join(', ')}), suggest 8-12 highly relevant technical and soft skills that would make the candidate stand out.
+      
+      Current experience to rewrite: ${JSON.stringify(resumeData.experience)}.
       
       Return a JSON object with:
-      - summary: A compelling 3-4 sentence professional summary.
+      - summary: The generated summary.
       - experience: An array of objects with 'company', 'role', 'period', and 'description' (bullet points).
-      - suggestedSkills: An array of 5-10 relevant technical skills for this role.
+      - suggestedSkills: An array of the 8-12 suggested skills.
       - suggestedReferences: An array of 2-3 placeholder professional references with 'name', 'position', 'company', and 'contact'.`;
 
       const result = await generateAIContent(prompt, {
@@ -288,10 +295,16 @@ export default function ResumeBuilder() {
         ...prev,
         summary: aiResult.summary,
         experience: aiResult.experience,
-        skills: Array.from(new Set([...prev.skills, ...aiResult.suggestedSkills])),
         references: aiResult.suggestedReferences
       }));
-      toast.success('AI Resume content generated!');
+      
+      // Filter out skills already in the list
+      const newSuggestions = aiResult.suggestedSkills.filter(
+        (s: string) => !resumeData.skills.some(existing => existing.toLowerCase() === s.toLowerCase())
+      );
+      setAiSuggestedSkills(newSuggestions);
+      
+      toast.success('AI Resume content generated! Check the Skills tab for suggestions.');
     } catch (error) {
       console.error(error);
       toast.error('Failed to generate AI content.');
@@ -489,6 +502,46 @@ export default function ResumeBuilder() {
     }
   };
 
+  const handleQuickShareEmail = () => {
+    if (!id) {
+      toast.error('Please save your resume first to generate a shareable link.');
+      return;
+    }
+    const publicUrl = `${window.location.origin}/resume/${id}`;
+    const subject = encodeURIComponent(`Resume: ${resumeData.fullName}`);
+    const body = encodeURIComponent(`Check out my resume at: ${publicUrl}`);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  const handleQuickShareWhatsApp = () => {
+    if (!id) {
+      toast.error('Please save your resume first to generate a shareable link.');
+      return;
+    }
+    const publicUrl = `${window.location.origin}/resume/${id}`;
+    const text = encodeURIComponent(`Check out my resume at: ${publicUrl}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const handleQuickShareLinkedIn = () => {
+    if (!id) {
+      toast.error('Please save your resume first to generate a shareable link.');
+      return;
+    }
+    const publicUrl = `${window.location.origin}/resume/${id}`;
+    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(publicUrl)}`, '_blank');
+  };
+
+  const handleCopyLink = () => {
+    if (!id) {
+      toast.error('Please save your resume first to generate a shareable link.');
+      return;
+    }
+    const publicUrl = `${window.location.origin}/resume/${id}`;
+    navigator.clipboard.writeText(publicUrl);
+    toast.success('Link copied to clipboard');
+  };
+
   const handleShareWhatsApp = () => {
     if (userData?.plan !== 'pro') {
       toast.error('Sharing via WhatsApp is a Pro feature.');
@@ -680,13 +733,13 @@ export default function ResumeBuilder() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="basics" className="w-full">
-                <TabsList className="grid grid-cols-6 mb-6">
-                  <TabsTrigger value="templates">Templates</TabsTrigger>
-                  <TabsTrigger value="basics">Basics</TabsTrigger>
-                  <TabsTrigger value="experience">Experience</TabsTrigger>
-                  <TabsTrigger value="skills">Skills</TabsTrigger>
-                  <TabsTrigger value="education">Education</TabsTrigger>
-                  <TabsTrigger value="references">References</TabsTrigger>
+                <TabsList className="flex sm:grid sm:grid-cols-6 w-full justify-start sm:justify-center overflow-x-auto sm:overflow-x-hidden overflow-y-hidden h-auto p-1 bg-muted/50 mb-6 no-scrollbar snap-x snap-mandatory">
+                  <TabsTrigger value="templates" className="flex-shrink-0 sm:flex-shrink snap-start">Templates</TabsTrigger>
+                  <TabsTrigger value="basics" className="flex-shrink-0 sm:flex-shrink snap-start">Basics</TabsTrigger>
+                  <TabsTrigger value="experience" className="flex-shrink-0 sm:flex-shrink snap-start">Experience</TabsTrigger>
+                  <TabsTrigger value="skills" className="flex-shrink-0 sm:flex-shrink snap-start">Skills</TabsTrigger>
+                  <TabsTrigger value="education" className="flex-shrink-0 sm:flex-shrink snap-start">Education</TabsTrigger>
+                  <TabsTrigger value="references" className="flex-shrink-0 sm:flex-shrink snap-start">References</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="templates" className="space-y-6">
@@ -914,6 +967,31 @@ export default function ResumeBuilder() {
                     />
                     <Button onClick={addSkill}>Add</Button>
                   </div>
+
+                  {aiSuggestedSkills.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AI Suggested Skills</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {aiSuggestedSkills.map((skill, i) => (
+                          <Badge 
+                            key={i} 
+                            variant="outline" 
+                            className="cursor-pointer hover:bg-primary/10 hover:border-primary transition-colors gap-1 px-3 py-1"
+                            onClick={() => {
+                              if (!resumeData.skills.includes(skill)) {
+                                setResumeData(prev => ({ ...prev, skills: [...prev.skills, skill] }));
+                                setAiSuggestedSkills(prev => prev.filter(s => s !== skill));
+                              }
+                            }}
+                          >
+                            <Plus size={12} />
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2 pt-4">
                     {resumeData.skills.map((skill, i) => (
                       <Badge key={i} variant="secondary" className="gap-1 px-3 py-1">
@@ -1054,33 +1132,63 @@ export default function ResumeBuilder() {
           </DialogHeader>
           <div className="grid gap-6 py-4">
             <div className="space-y-4">
-              <Label className="flex items-center gap-2">
-                <Mail size={16} /> Send via Email
-              </Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quick Share Link</Label>
               <div className="flex gap-2">
-                <Input 
-                  placeholder="hiring@company.com" 
-                  value={shareEmail}
-                  onChange={(e) => setShareEmail(e.target.value)}
-                  disabled={userData?.plan !== 'pro' || loading}
-                />
-                <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro' || loading}>
-                  {loading ? <Loader2 className="animate-spin" size={16} /> : 'Send'}
+                <Button variant="outline" className="flex-1 gap-2 h-10 px-2" onClick={handleQuickShareEmail}>
+                  <Mail size={16} /> <span className="hidden sm:inline">Email</span>
+                </Button>
+                <Button variant="outline" className="flex-1 gap-2 h-10 px-2" onClick={handleQuickShareWhatsApp}>
+                  <MessageCircle size={16} /> <span className="hidden sm:inline">WhatsApp</span>
+                </Button>
+                <Button variant="outline" className="flex-1 gap-2 h-10 px-2" onClick={handleQuickShareLinkedIn}>
+                  <Linkedin size={16} /> <span className="hidden sm:inline">LinkedIn</span>
+                </Button>
+                <Button variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={handleCopyLink} title="Copy Link">
+                  <LinkIcon size={16} />
                 </Button>
               </div>
             </div>
+
             <div className="space-y-4">
-              <Label className="flex items-center gap-2">
-                <MessageCircle size={16} /> Send via WhatsApp
-              </Label>
-              <div className="flex gap-2">
-                <Input 
-                  placeholder="+1234567890" 
-                  value={sharePhone}
-                  onChange={(e) => setSharePhone(e.target.value)}
-                  disabled={userData?.plan !== 'pro' || loading}
-                />
-                <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro' || loading}>Send</Button>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Direct Delivery (Pro)</Label>
+                {userData?.plan !== 'pro' && <Badge variant="secondary" className="text-[10px]">PRO</Badge>}
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-2">
+                    <Mail size={14} /> Send PDF via Email
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="hiring@company.com" 
+                      value={shareEmail}
+                      onChange={(e) => setShareEmail(e.target.value)}
+                      disabled={userData?.plan !== 'pro' || loading}
+                      className="h-9 text-sm"
+                    />
+                    <Button onClick={handleShareEmail} disabled={userData?.plan !== 'pro' || loading} size="sm">
+                      {loading ? <Loader2 className="animate-spin" size={14} /> : 'Send'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-2">
+                    <MessageCircle size={14} /> Send Link via WhatsApp
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="+1234567890" 
+                      value={sharePhone}
+                      onChange={(e) => setSharePhone(e.target.value)}
+                      disabled={userData?.plan !== 'pro' || loading}
+                      className="h-9 text-sm"
+                    />
+                    <Button onClick={handleShareWhatsApp} disabled={userData?.plan !== 'pro' || loading} size="sm">Send</Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

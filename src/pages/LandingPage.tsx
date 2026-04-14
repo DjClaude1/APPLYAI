@@ -39,9 +39,6 @@ export default function LandingPage() {
                 <Button size="lg" className="h-12 px-8 text-lg gap-2" onClick={handleGetStarted}>
                   Get Started for Free <ArrowRight size={20} />
                 </Button>
-                <Button size="lg" variant="outline" className="h-12 px-8 text-lg">
-                  View Demo
-                </Button>
               </div>
             </motion.div>
           </div>
