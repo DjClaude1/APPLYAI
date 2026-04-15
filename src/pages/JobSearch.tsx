@@ -316,6 +316,10 @@ export default function JobSearch() {
     if (!user || !targetJob) return;
     const job = targetJob;
 
+    // Set applying state immediately to prevent duplicate submissions
+    setApplyingId(job.id);
+    setIsApplyModalOpen(false);
+
     // Fetch fresh application count from DB to avoid stale userData
     const { data: freshProfile, error: profileError } = await supabase
       .from('profiles')
@@ -325,6 +329,7 @@ export default function JobSearch() {
 
     if (profileError || !freshProfile) {
       toast.error('Failed to verify your account. Please try again.');
+      setApplyingId(null);
       return;
     }
 
@@ -334,22 +339,22 @@ export default function JobSearch() {
     // Enforce free plan application limit
     if (currentPlan === 'free' && currentCount >= 3) {
       toast.error('You have reached the limit of 3 applications on the Free plan. Please upgrade to Pro for unlimited applications.');
+      setApplyingId(null);
       return;
     }
 
     const selectedResume = userResumes.find(r => r.id === selectedResumeId);
     if (!selectedResume) {
       toast.error('Please select a resume.');
+      setApplyingId(null);
       return;
     }
 
     if (!recruiterEmail || !recruiterEmail.includes('@')) {
       toast.error('Please enter a valid recruiter email.');
+      setApplyingId(null);
       return;
     }
-
-    setApplyingId(job.id);
-    setIsApplyModalOpen(false);
     
     try {
       // 1. Generate PDF of the selected resume
