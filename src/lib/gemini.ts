@@ -22,14 +22,31 @@ export async function generateAIContent(prompt: string, options: {
   systemInstruction?: string, 
   jsonMode?: boolean,
   useSearch?: boolean,
-  responseSchema?: any
+  responseSchema?: any,
+  inlineData?: {
+    data: string;
+    mimeType: string;
+  }
 } = {}) {
-  const { systemInstruction, jsonMode, useSearch, responseSchema } = options;
+  const { systemInstruction, jsonMode, useSearch, responseSchema, inlineData } = options;
 
   try {
+    const contents: any[] = [];
+    
+    if (inlineData) {
+      contents.push({
+        parts: [
+          { text: prompt },
+          { inlineData }
+        ]
+      });
+    } else {
+      contents.push(prompt);
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: prompt,
+      contents: contents.length === 1 && !inlineData ? prompt : { parts: inlineData ? [{ text: prompt }, { inlineData }] : [{ text: prompt }] },
       config: {
         systemInstruction,
         responseMimeType: jsonMode ? "application/json" : "text/plain",

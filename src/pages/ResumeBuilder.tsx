@@ -574,10 +574,124 @@ export default function ResumeBuilder() {
         try {
           const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
           let fullText = '';
+          let hasText = false;
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
-            fullText += content.items.map((item: any) => item.str).join(' ') + '\n';
+            const pageText = content.items.map((item: any) => item.str).join(' ');
+            if (pageText.trim()) hasText = true;
+            fullText += pageText + '\n';
+          }
+          
+          if (!hasText || !fullText.trim()) {
+            toast.info('No readable text found. Using AI Vision to analyze your CV...', { duration: 5000 });
+            const firstPage = await pdf.getPage(1);
+            const viewport = firstPage.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            if (context) {
+              await (firstPage as any).render({ canvasContext: context, viewport }).promise;
+              const imageData = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+              
+              const visionPrompt = `Extract resume information from this image and return it as a structured JSON object.
+              JSON Schema:
+              {
+                "fullName": "string",
+                "jobTitle": "string",
+                "email": "string",
+                "phone": "string",
+                "location": "string",
+                "summary": "string",
+                "experience": [{"company": "string", "role": "string", "period": "string", "description": "string"}],
+                "skills": ["string"],
+                "education": [{"school": "string", "degree": "string", "year": "string"}],
+                "references": [{"name": "string", "position": "string", "company": "string", "contact": "string"}]
+              }`;
+
+              const visionResult = await generateAIContent(visionPrompt, {
+                jsonMode: true,
+                inlineData: {
+                  data: imageData,
+                  mimeType: 'image/jpeg'
+                },
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    fullName: { type: Type.STRING },
+                    jobTitle: { type: Type.STRING },
+                    email: { type: Type.STRING },
+                    phone: { type: Type.STRING },
+                    location: { type: Type.STRING },
+                    summary: { type: Type.STRING },
+                    experience: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          company: { type: Type.STRING },
+                          role: { type: Type.STRING },
+                          period: { type: Type.STRING },
+                          description: { type: Type.STRING }
+                        },
+                        required: ["company", "role", "period", "description"]
+                      }
+                    },
+                    skills: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    education: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          school: { type: Type.STRING },
+                          degree: { type: Type.STRING },
+                          year: { type: Type.STRING }
+                        },
+                        required: ["school", "degree", "year"]
+                      }
+                    },
+                    references: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          name: { type: Type.STRING },
+                          position: { type: Type.STRING },
+                          company: { type: Type.STRING },
+                          contact: { type: Type.STRING }
+                        },
+                        required: ["name", "position", "company", "contact"]
+                      }
+                    }
+                  }
+                }
+              });
+
+              if (visionResult.success) {
+                const info = JSON.parse(cleanJson(visionResult.text));
+                setResumeData({
+                  fullName: info.fullName || '',
+                  jobTitle: info.jobTitle || '',
+                  email: info.email || '',
+                  phone: info.phone || '',
+                  location: info.location || '',
+                  summary: info.summary || '',
+                  experience: info.experience || [{ company: '', role: '', period: '', description: '' }],
+                  skills: info.skills || [],
+                  education: info.education || [{ school: '', degree: '', year: '' }],
+                  references: info.references || [{ name: '', position: '', company: '', contact: '' }],
+                  template: resumeData.template,
+                  font: resumeData.font
+                });
+                toast.success('Resume parsed successfully with AI Vision!');
+                setLoading(false);
+                return;
+              } else {
+                throw new Error('Could not read text from PDF and AI Vision failed.');
+              }
+            }
           }
           text = fullText;
         } catch (err) {

@@ -8,7 +8,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Zap
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth } from '../context/AuthContext';
@@ -33,6 +34,7 @@ export default function Sidebar({
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Resume Builder', path: '/resume-builder', icon: FileText },
+    { name: 'Magic Apply', path: '/magic-apply', icon: Zap },
     { name: 'Job Search', path: '/job-search', icon: Search },
     { name: 'Cover Letter', path: '/cover-letter', icon: FileText },
     { name: 'Applications', path: '/applications', icon: Briefcase },

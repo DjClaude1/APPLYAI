@@ -9,6 +9,7 @@ import ResumeBuilder from './pages/ResumeBuilder';
 import JobSearch from './pages/JobSearch';
 import Applications from './pages/Applications';
 import CoverLetter from './pages/CoverLetter';
+import OneClickApply from './pages/OneClickApply';
 import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
 import PublicResume from './pages/PublicResume';
@@ -101,6 +102,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <CoverLetter />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/magic-apply"
+                element={
+                  <ProtectedRoute>
+                    <OneClickApply />
                   </ProtectedRoute>
                 }
               />

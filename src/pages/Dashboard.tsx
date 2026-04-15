@@ -1,8 +1,9 @@
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle, Link as LinkIcon, Linkedin } from 'lucide-react';
+import { FileText, Briefcase, Search, TrendingUp, Plus, ArrowRight, Clock, Edit2, Trash2, Loader2, Share2, Mail, MessageCircle, Link as LinkIcon, Linkedin, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
@@ -281,20 +282,63 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
           >
-            <Card>
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${stat.color}`}>
+            <Card className="overflow-hidden relative group hover:shadow-xl transition-all duration-300 border-primary/5">
+              <CardContent className="p-6 flex items-center gap-4 relative z-10">
+                <div className={`p-4 rounded-2xl ${stat.color} group-hover:scale-110 transition-transform duration-300`}>
                   {stat.icon}
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="text-2xl font-bold">{stat.value}</p>
+                  <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{stat.label}</p>
+                  <p className="text-3xl font-bold tracking-tight">{stat.value}</p>
                 </div>
               </CardContent>
+              <div className="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-300">
+                {React.cloneElement(stat.icon as React.ReactElement, { size: 100 })}
+              </div>
             </Card>
           </motion.div>
         ))}
       </div>
+
+      {/* Magic Apply Hero */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="mb-8"
+      >
+        <Card className="bg-slate-950 text-white overflow-hidden relative border-none shadow-2xl">
+          {/* Animated Mesh Gradient Background */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-primary/40 blur-[100px] rounded-full animate-pulse" />
+            <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-violet-600/30 blur-[100px] rounded-full animate-pulse delay-700" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
+          </div>
+
+          <CardContent className="p-10 relative z-10">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+              <div className="space-y-4 text-center lg:text-left">
+                <Badge variant="secondary" className="bg-primary/20 text-primary-foreground border-primary/30 gap-1.5 px-3 py-1 text-xs font-bold uppercase tracking-widest">
+                  <Zap size={14} className="fill-current" /> NEW FEATURE
+                </Badge>
+                <h2 className="text-4xl lg:text-5xl font-black tracking-tight leading-none">
+                  1-Click <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-violet-400">Magic Apply</span>
+                </h2>
+                <p className="text-slate-300 text-lg max-w-xl leading-relaxed">
+                  Stop wasting hours on forms. Upload your CV once and let our AI <span className="text-white font-semibold">automatically find and apply</span> to matching jobs for you.
+                </p>
+              </div>
+              <div className="shrink-0">
+                <Link to="/magic-apply">
+                  <Button size="lg" variant="secondary" className="h-16 px-10 text-xl gap-3 shadow-2xl hover:scale-105 transition-transform rounded-2xl bg-white text-slate-950 hover:bg-slate-100">
+                    <Zap size={24} className="fill-primary text-primary" /> Start Magic Apply
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Saved Resumes */}

@@ -20,25 +20,44 @@ export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-screen">
       {/* Hero Section */}
-      <section className="relative py-20 lg:py-32 overflow-hidden">
+      <section className="relative py-24 lg:py-40 overflow-hidden">
         <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-4xl mx-auto text-center">
+          <div className="max-w-5xl mx-auto text-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="mb-8 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium"
+            >
+              <Zap size={16} className="fill-current" />
+              <span>The Future of Job Searching is Here</span>
+            </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
             >
-              <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight mb-6">
-                Land Your Dream Job with <span className="text-primary">AI Precision</span>
+              <h1 className="text-6xl lg:text-8xl font-black tracking-tight mb-8 leading-[0.9]">
+                Land Your Dream Job with <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-violet-600">AI Precision</span>
               </h1>
-              <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-                Generate ATS-friendly resumes, tailored cover letters, and automate your job applications. 
-                Empowering professionals to land roles at top tech companies worldwide.
+              <p className="text-xl lg:text-2xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed">
+                Generate ATS-friendly resumes, tailored cover letters, and <span className="text-foreground font-semibold">automate your job applications</span>. 
+                Empowering professionals to land roles at top companies worldwide.
               </p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Button size="lg" className="h-12 px-8 text-lg gap-2" onClick={handleGetStarted}>
-                  Get Started for Free <ArrowRight size={20} />
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+                <Button size="lg" className="h-16 px-10 text-xl gap-2 shadow-2xl shadow-primary/20 rounded-2xl" onClick={handleGetStarted}>
+                  Get Started for Free <ArrowRight size={24} />
                 </Button>
+                <div className="flex items-center gap-4 text-sm font-medium text-muted-foreground">
+                  <div className="flex -space-x-3">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="w-10 h-10 rounded-full border-2 border-background bg-muted flex items-center justify-center overflow-hidden">
+                        <img src={`https://picsum.photos/seed/user${i}/100/100`} alt="User" referrerPolicy="no-referrer" />
+                      </div>
+                    ))}
+                  </div>
+                  <span>Joined by 10,000+ professionals</span>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -46,8 +65,9 @@ export default function LandingPage() {
 
         {/* Background Decoration */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10 pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 blur-[120px] rounded-full" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 blur-[120px] rounded-full" />
+          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-primary/20 blur-[140px] rounded-full animate-pulse" />
+          <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-violet-500/10 blur-[140px] rounded-full animate-pulse" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
         </div>
       </section>
 
