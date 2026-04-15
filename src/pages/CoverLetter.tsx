@@ -114,13 +114,23 @@ export default function CoverLetter() {
     
     setLoading(true);
     try {
+      // Extract job title and company from the job description for better organization
+      const resume = resumes.find(r => r.id === selectedResume);
+      const jobTitle = resume?.content?.jobTitle || '';
+      
+      // Try to extract company name from first line of job description
+      const firstLine = jobDescription.split('\n')[0]?.trim() || '';
+      const companyGuess = firstLine.length > 0 && firstLine.length < 100 ? firstLine : '';
+
       const { error } = await supabase
         .from('cover_letters')
         .insert([
           {
             uid: user.id,
-            title: `Cover Letter - ${new Date().toLocaleDateString()}`,
+            title: `Cover Letter - ${jobTitle || new Date().toLocaleDateString()}`,
             content: generatedLetter,
+            job_title: jobTitle || null,
+            company: companyGuess || null,
             created_at: new Date().toISOString()
           }
         ]);

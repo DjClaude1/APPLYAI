@@ -15,6 +15,10 @@ interface Application {
   location: string;
   status: 'applied' | 'interview' | 'rejected' | 'offered';
   applied_at: string;
+  job_link?: string;
+  recruiter_email?: string;
+  resume_id?: string;
+  cover_letter_id?: string;
 }
 
 export default function Applications() {

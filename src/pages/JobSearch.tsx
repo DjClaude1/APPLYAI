@@ -316,6 +316,12 @@ export default function JobSearch() {
     if (!user || !targetJob) return;
     const job = targetJob;
 
+    // Enforce free plan application limit
+    if (userData?.plan === 'free' && (userData?.application_count || 0) >= 3) {
+      toast.error('You have reached the limit of 3 applications on the Free plan. Please upgrade to Pro for unlimited applications.');
+      return;
+    }
+
     const selectedResume = userResumes.find(r => r.id === selectedResumeId);
     if (!selectedResume) {
       toast.error('Please select a resume.');
