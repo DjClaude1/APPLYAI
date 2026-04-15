@@ -316,8 +316,18 @@ export default function JobSearch() {
     if (!user || !targetJob) return;
     const job = targetJob;
 
+    // Fetch fresh application count from DB to avoid stale userData
+    const { data: freshProfile } = await supabase
+      .from('profiles')
+      .select('application_count, plan')
+      .eq('id', user.id)
+      .single();
+
+    const currentCount = freshProfile?.application_count || 0;
+    const currentPlan = freshProfile?.plan || userData?.plan || 'free';
+
     // Enforce free plan application limit
-    if (userData?.plan === 'free' && (userData?.application_count || 0) >= 3) {
+    if (currentPlan === 'free' && currentCount >= 3) {
       toast.error('You have reached the limit of 3 applications on the Free plan. Please upgrade to Pro for unlimited applications.');
       return;
     }
@@ -430,11 +440,11 @@ export default function JobSearch() {
 
         if (appError) throw appError;
 
-        // 5. Update user application count
+        // 5. Update user application count using fresh DB value
         const { error: userUpdateError } = await supabase
           .from('profiles')
           .update({
-            application_count: (userData?.application_count || 0) + 1
+            application_count: currentCount + 1
           })
           .eq('id', user.id);
 
