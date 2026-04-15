@@ -236,8 +236,18 @@ export default function OneClickApply() {
         }
       });
 
-      if (!searchResult.success) throw new Error('Job search failed.');
-      const jobs = JSON.parse(cleanJson(searchResult.text));
+      if (!searchResult.success || !searchResult.text) {
+        throw new Error(searchResult.error || 'Job search failed to return results.');
+      }
+      
+      const cleanedJobs = cleanJson(searchResult.text);
+      if (!cleanedJobs || cleanedJobs === '[]') {
+        setStep('upload');
+        toast.info('No matching jobs found. Try a different CV or title.');
+        return;
+      }
+
+      const jobs = JSON.parse(cleanedJobs);
       setFoundJobs(jobs);
 
       if (jobs.length === 0) {
@@ -262,11 +272,29 @@ export default function OneClickApply() {
         }));
 
         try {
-          // Guess recruiter email for this job
+          // 1. Guess recruiter email for this job
           const emailResult = await generateAIContent(`Find or guess the most likely recruiter email for ${job.title} at ${job.company}. Return ONLY the email address.`);
           const email = emailResult.success ? emailResult.text.trim().toLowerCase() : `careers@${job.company.toLowerCase().replace(/\s+/g, '')}.com`;
 
-          // Send application
+          // 2. Generate personalized application email body
+          const personalizedEmailResult = await generateAIContent(`
+            Write a professional and concise job application email for the following position:
+            Job Title: ${job.title}
+            Company: ${job.company}
+            Job Description: ${job.description}
+            
+            Candidate Name: ${extractedData.fullName}
+            Candidate Skills: ${extractedData.skills.join(', ')}
+            
+            The email should be around 100-150 words, highlight matching skills, and sound enthusiastic. 
+            Return ONLY the email body text.
+          `);
+          
+          const emailBody = personalizedEmailResult.success 
+            ? personalizedEmailResult.text.trim() 
+            : `Hi Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position. Please find my resume attached.\n\nBest regards,\n${extractedData.fullName}`;
+
+          // 3. Send application
           const response = await fetch('/api/send-resume', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -275,7 +303,7 @@ export default function OneClickApply() {
               pdfBase64,
               fileName: file.name,
               subject: `Job Application: ${job.title} - ${extractedData.fullName}`,
-              body: `Hi Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position. Please find my resume attached.\n\nBest regards,\n${extractedData.fullName}`
+              body: emailBody
             })
           });
 

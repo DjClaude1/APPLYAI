@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Loader2, Users, Briefcase, FileText, ShieldCheck, Search } from 'lucide-react';
+import { Loader2, Users, Briefcase, FileText, ShieldCheck, Search, Trash2 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 
@@ -41,6 +41,71 @@ export default function AdminDashboard() {
       toast.error('Failed to load admin data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const [isWiping, setIsWiping] = useState(false);
+
+  const wipeAllData = async () => {
+    if (!window.confirm('CRITICAL: This will delete ALL resumes, applications, and non-admin profiles. This action is irreversible. Are you absolutely sure?')) {
+      return;
+    }
+
+    setIsWiping(true);
+    try {
+      // 1. Delete all resumes (cascade might handle this if set up, but let's be explicit)
+      const { error: resumeError } = await supabase
+        .from('resumes')
+        .delete()
+        .neq('uid', userData.id); // Don't delete admin's own resumes
+
+      if (resumeError) throw resumeError;
+
+      // 2. Delete all applications
+      const { error: appError } = await supabase
+        .from('applications')
+        .delete()
+        .neq('uid', userData.id);
+
+      if (appError) throw appError;
+
+      // 3. Delete all non-admin profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .neq('role', 'admin');
+
+      if (profileError) throw profileError;
+
+      toast.success('All non-admin data has been wiped successfully.');
+      fetchData();
+    } catch (error: any) {
+      console.error('Wipe error:', error);
+      toast.error('Failed to wipe data: ' + error.message);
+    } finally {
+      setIsWiping(false);
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (!window.confirm('Delete this user and all their data?')) return;
+
+    try {
+      // Delete user profile (cascading should handle resumes/apps if FKs are set to cascade)
+      // If not, we do it manually
+      await supabase.from('resumes').delete().eq('uid', userId);
+      await supabase.from('applications').delete().eq('uid', userId);
+      
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      toast.success('User deleted');
+    } catch (error: any) {
+      toast.error('Failed to delete user');
     }
   };
 
@@ -89,6 +154,15 @@ export default function AdminDashboard() {
           <p className="text-muted-foreground">Manage users, subscriptions, and platform health.</p>
         </div>
         <div className="flex gap-4">
+          <Button 
+            variant="destructive" 
+            className="gap-2" 
+            onClick={wipeAllData}
+            disabled={isWiping}
+          >
+            {isWiping ? <Loader2 className="animate-spin" size={18} /> : <Trash2 size={18} />}
+            Wipe All Data
+          </Button>
           <Card className="px-4 py-2 flex items-center gap-3">
             <Users className="text-blue-500" size={20} />
             <div>
@@ -176,14 +250,25 @@ export default function AdminDashboard() {
                             {new Date(user.created_at).toLocaleDateString()}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => togglePlan(user.id, user.plan)}
-                              disabled={user.role === 'admin'}
-                            >
-                              {user.plan === 'pro' ? 'Downgrade' : 'Upgrade'}
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => togglePlan(user.id, user.plan)}
+                                disabled={user.role === 'admin'}
+                              >
+                                {user.plan === 'pro' ? 'Downgrade' : 'Upgrade'}
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => deleteUser(user.id)}
+                                disabled={user.role === 'admin'}
+                              >
+                                <Trash2 size={16} />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

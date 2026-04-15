@@ -8,10 +8,12 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { Loader2, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+
 export default function Auth() {
   const { user, loading, login, loginWithEmail, signUpWithEmail } = useAuth();
   const navigate = useNavigate();
-  const [isLogin, setIsLogin] = useState(true);
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -27,19 +29,44 @@ export default function Auth() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loadingLocal) return;
     setLoadingLocal(true);
+    
     try {
-      if (isLogin) {
+      if (activeTab === 'login') {
         await loginWithEmail(formData.email, formData.password);
         toast.success('Welcome back!');
       } else {
         await signUpWithEmail(formData.email, formData.password, formData.name);
-        toast.success('Account created!');
+        // Supabase behavior: if email confirmation is ON, session is null.
+        // If it's OFF, session is present and user is logged in.
+        toast.success('Account created successfully!');
       }
-      navigate('/dashboard');
+      // The useEffect will handle navigation if user is logged in
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || 'Authentication failed');
+      const message = error.message || '';
+      const isExpectedAuthError = 
+        message.includes('Invalid email or password') || 
+        message.includes('already registered') || 
+        message.includes('at least 6 characters') ||
+        message.includes('Email not confirmed');
+      
+      if (!isExpectedAuthError) {
+        console.error('Authentication error:', error);
+      }
+      
+      if (message.includes('Invalid email or password')) {
+        toast.error('Invalid email or password. Please check your credentials.');
+      } else if (message.includes('already registered')) {
+        toast.error('This email is already registered. Switching to Sign In.');
+        setActiveTab('login');
+      } else if (message.includes('at least 6 characters')) {
+        toast.error('Password must be at least 6 characters long.');
+      } else if (message.includes('Email not confirmed')) {
+        toast.error('Please confirm your email address before signing in.');
+      } else {
+        toast.error(message || 'Authentication failed');
+      }
     } finally {
       setLoadingLocal(false);
     }
@@ -69,65 +96,73 @@ export default function Auth() {
           </div>
         )}
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">{isLogin ? 'Welcome Back' : 'Create Account'}</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to ApplyAI</CardTitle>
           <CardDescription>
-            {isLogin ? 'Enter your credentials to access your account' : 'Join ApplyAI and start landing your dream job'}
+            Land your dream job with AI-powered tools
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-8">
+              <TabsTrigger value="login">Sign In</TabsTrigger>
+              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            </TabsList>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <TabsContent value="signup" className="space-y-4 mt-0">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                    <Input 
+                      id="name" 
+                      placeholder="John Doe" 
+                      className="pl-10"
+                      required={activeTab === 'signup'}
+                      value={formData.name}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="email">Email Address</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
                   <Input 
-                    id="name" 
-                    placeholder="John Doe" 
+                    id="email" 
+                    type="email" 
+                    placeholder="name@example.com" 
                     className="pl-10"
                     required 
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
                   />
                 </div>
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-                <Input 
-                  id="email" 
-                  type="email" 
-                  placeholder="name@example.com" 
-                  className="pl-10"
-                  required 
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                />
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                  <Input 
+                    id="password" 
+                    type="password" 
+                    placeholder="••••••••" 
+                    className="pl-10"
+                    required 
+                    value={formData.password}
+                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  />
+                </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-                <Input 
-                  id="password" 
-                  type="password" 
-                  placeholder="••••••••" 
-                  className="pl-10"
-                  required 
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                />
-              </div>
-            </div>
-            <Button type="submit" className="w-full h-11 gap-2" disabled={loadingLocal}>
-              {loadingLocal ? <Loader2 className="animate-spin" size={18} /> : null}
-              {isLogin ? 'Sign In' : 'Sign Up'}
-              {!loadingLocal && <ArrowRight size={18} />}
-            </Button>
-          </form>
+              <Button type="submit" className="w-full h-11 gap-2" disabled={loadingLocal}>
+                {loadingLocal ? <Loader2 className="animate-spin" size={18} /> : null}
+                {activeTab === 'login' ? 'Sign In' : 'Create Account'}
+                {!loadingLocal && <ArrowRight size={18} />}
+              </Button>
+            </form>
+          </Tabs>
 
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
@@ -144,17 +179,6 @@ export default function Auth() {
             Google
           </Button>
         </CardContent>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-            <button 
-              className="text-primary font-medium hover:underline"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin ? 'Sign Up' : 'Sign In'}
-            </button>
-          </p>
-        </CardFooter>
       </Card>
     </div>
   );

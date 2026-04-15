@@ -165,11 +165,18 @@ export default function JobSearch() {
         }
       });
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch jobs');
+      if (!result.success || !result.text) {
+        throw new Error(result.error || 'AI failed to return any job data. Please try again.');
       }
 
-      const jobsData = JSON.parse(cleanJson(result.text));
+      const cleaned = cleanJson(result.text);
+      if (!cleaned || cleaned === '[]') {
+        setJobs([]);
+        toast.info('No jobs found matching your criteria.');
+        return;
+      }
+
+      const jobsData = JSON.parse(cleaned);
       const validatedJobs = (Array.isArray(jobsData) ? jobsData : []).map((job: any, index: number) => ({
         ...job,
         id: job.id || `job-${Date.now()}-${index}`
@@ -227,9 +234,14 @@ export default function JobSearch() {
         }
       });
 
-      if (result.success) {
+      if (result.success && result.text) {
         try {
-          const moreJobs = JSON.parse(cleanJson(result.text));
+          const cleaned = cleanJson(result.text);
+          if (!cleaned || cleaned === '[]') {
+            toast.info('No more unique jobs found.');
+            return;
+          }
+          const moreJobs = JSON.parse(cleaned);
           if (Array.isArray(moreJobs) && moreJobs.length > 0) {
             const validatedMoreJobs = moreJobs.map((job: any, index: number) => ({
               ...job,
@@ -371,11 +383,29 @@ export default function JobSearch() {
       const pdfBase64 = pdf.output('datauristring').split(',')[1];
       const fileName = `${(selectedResume.content?.fullName || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`;
 
-      // 2. Prepare Cover Letter if selected
-      let coverLetterText = '';
+      // 2. Prepare Cover Letter or generate personalized email body
+      let emailBody = '';
       if (selectedCoverLetterId !== 'none') {
         const cl = userCoverLetters.find(c => c.id === selectedCoverLetterId);
-        if (cl) coverLetterText = cl.content;
+        if (cl) emailBody = cl.content;
+      } else {
+        // Generate personalized email body using Gemini
+        const personalizedEmailResult = await generateAIContent(`
+          Write a professional and concise job application email for the following position:
+          Job Title: ${job.title}
+          Company: ${job.company}
+          Job Description: ${job.description}
+          
+          Candidate Name: ${selectedResume.content?.fullName || 'Candidate'}
+          Candidate Skills: ${(selectedResume.content?.skills || []).join(', ')}
+          
+          The email should be around 100-150 words, highlight matching skills, and sound enthusiastic. 
+          Return ONLY the email body text.
+        `);
+        
+        emailBody = personalizedEmailResult.success 
+          ? personalizedEmailResult.text.trim() 
+          : `Hi Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position advertised. Please find my resume attached for your review.\n\nBest regards,\n${selectedResume.content?.fullName}`;
       }
 
       // 3. Send via API
@@ -387,7 +417,7 @@ export default function JobSearch() {
           pdfBase64,
           fileName,
           subject: `Job Application: ${job.title} - ${selectedResume.content?.fullName}`,
-          body: coverLetterText || `Hi Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position advertised. Please find my resume attached for your review.\n\nBest regards,\n${selectedResume.content?.fullName}`
+          body: emailBody
         })
       });
 

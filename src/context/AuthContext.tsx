@@ -153,10 +153,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password: pass,
       });
-      if (error) throw error;
+      if (error) {
+        if (error.message === 'Invalid login credentials') {
+          throw new Error('Invalid email or password. Please check your credentials.');
+        }
+        if (error.message.includes('Email not confirmed')) {
+          throw new Error('Email not confirmed. Please check your inbox for a verification link.');
+        }
+        throw error;
+      }
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || 'Login failed');
+      // Don't log expected auth errors to console here, handle in UI
       throw error;
     }
   };
@@ -173,7 +180,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       });
       
-      if (error) throw error;
+      if (error) {
+        if (error.message === 'User already registered') {
+          throw new Error('This email is already registered. Please sign in instead.');
+        }
+        throw error;
+      }
       
       if (data.user) {
         // Create profile
@@ -197,8 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || 'Signup failed');
+      // Don't log expected auth errors to console here, handle in UI
       throw error;
     }
   };
