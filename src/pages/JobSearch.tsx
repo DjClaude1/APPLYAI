@@ -317,14 +317,19 @@ export default function JobSearch() {
     const job = targetJob;
 
     // Fetch fresh application count from DB to avoid stale userData
-    const { data: freshProfile } = await supabase
+    const { data: freshProfile, error: profileError } = await supabase
       .from('profiles')
       .select('application_count, plan')
       .eq('id', user.id)
       .single();
 
-    const currentCount = freshProfile?.application_count || 0;
-    const currentPlan = freshProfile?.plan || userData?.plan || 'free';
+    if (profileError || !freshProfile) {
+      toast.error('Failed to verify your account. Please try again.');
+      return;
+    }
+
+    const currentCount = freshProfile.application_count || 0;
+    const currentPlan = freshProfile.plan || 'free';
 
     // Enforce free plan application limit
     if (currentPlan === 'free' && currentCount >= 3) {
