@@ -114,12 +114,16 @@ export default function CoverLetter() {
     
     setLoading(true);
     try {
+      // Use job title from resume for a more descriptive cover letter title
+      const resume = resumes.find(r => r.id === selectedResume);
+      const jobTitle = resume?.content?.jobTitle || '';
+
       const { error } = await supabase
         .from('cover_letters')
         .insert([
           {
             uid: user.id,
-            title: `Cover Letter - ${new Date().toLocaleDateString()}`,
+            title: `Cover Letter - ${jobTitle || new Date().toLocaleDateString()}`,
             content: generatedLetter,
             created_at: new Date().toISOString()
           }

@@ -184,7 +184,7 @@ export default function Settings() {
                   </div>
                   <div className="p-4 border border-primary/50 rounded-lg bg-primary/5">
                     <h4 className="font-bold mb-2 flex items-center gap-2">
-                      Pro Plan <Badge size="sm">Recommended</Badge>
+                      Pro Plan <Badge>Recommended</Badge>
                     </h4>
                     <ul className="text-sm space-y-2">
                       <li>• Unlimited Resumes</li>

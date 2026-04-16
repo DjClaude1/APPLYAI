@@ -328,6 +328,7 @@ export default function JobSearch() {
     if (!user || !targetJob) return;
     const job = targetJob;
 
+    // Validate user-correctable inputs first (while modal is still open)
     const selectedResume = userResumes.find(r => r.id === selectedResumeId);
     if (!selectedResume) {
       toast.error('Please select a resume.');
@@ -339,10 +340,32 @@ export default function JobSearch() {
       return;
     }
 
+    // Set applying state and close modal after input validation passes
     setApplyingId(job.id);
     setIsApplyModalOpen(false);
-    
+
     try {
+      // Fetch fresh application count from DB to avoid stale userData
+      const { data: freshProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('application_count, plan')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || !freshProfile) {
+        toast.error('Failed to verify your account. Please try again.');
+        return;
+      }
+
+      const currentCount = freshProfile.application_count || 0;
+      const currentPlan = freshProfile.plan || 'free';
+
+      // Enforce free plan application limit
+      if (currentPlan === 'free' && currentCount >= 3) {
+        toast.error('You have reached the limit of 3 applications on the Free plan. Please upgrade to Pro for unlimited applications.');
+        return;
+      }
+
       // 1. Generate PDF of the selected resume
       const element = document.getElementById('resume-preview-apply-hidden');
       if (!element) throw new Error('Preview element not found');
@@ -454,11 +477,11 @@ export default function JobSearch() {
 
         if (appError) throw appError;
 
-        // 5. Update user application count
+        // 5. Update user application count using fresh DB value
         const { error: userUpdateError } = await supabase
           .from('profiles')
           .update({
-            application_count: (userData?.application_count || 0) + 1
+            application_count: currentCount + 1
           })
           .eq('id', user.id);
 

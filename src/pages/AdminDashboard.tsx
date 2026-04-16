@@ -341,22 +341,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-function Zap({ className, size }: { className?: string, size?: number }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size || 24}
-      height={size || 24}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M4 14.71 14.71 4 10 9h10l-10.71 10.71L14 15H4z" />
-    </svg>
-  );
-}

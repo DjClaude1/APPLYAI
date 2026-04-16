@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -34,6 +35,20 @@ async function startServer() {
 
   app.post("/api/send-resume", async (req, res) => {
     const { email, pdfBase64, fileName, subject, body } = req.body;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: "Recipient email is required." });
+    }
+
+    if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+      return res.status(400).json({ error: "PDF content is required." });
+    }
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "Invalid email address format." });
+    }
 
     if (!resend) {
       return res.status(500).json({ error: "Email service not configured. Please set RESEND_API_KEY." });
