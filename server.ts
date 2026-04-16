@@ -15,7 +15,17 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-  const resendFrom = process.env.RESEND_FROM_EMAIL || 'ApplyAI <onboarding@resend.dev>';
+  
+  // Sanitize and validate the from email
+  const getFromEmail = () => {
+    const envFrom = process.env.RESEND_FROM_EMAIL?.trim();
+    if (envFrom && (envFrom.includes('@') || (envFrom.includes('<') && envFrom.includes('>')))) {
+      return envFrom;
+    }
+    return 'ApplyAI <onboarding@resend.dev>';
+  };
+  
+  const resendFrom = getFromEmail();
   
   // API routes
   app.get("/api/health", (req, res) => {
@@ -44,6 +54,7 @@ async function startServer() {
       });
 
       if (error) {
+        console.error('Resend API Error:', error);
         return res.status(400).json({ error });
       }
 
