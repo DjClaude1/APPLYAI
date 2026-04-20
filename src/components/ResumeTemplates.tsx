@@ -474,3 +474,164 @@ export const ExecutiveTemplate = ({ resumeData, previewId = "resume-preview" }: 
     </div>
   </div>
 );
+
+export const ProfessionalTemplate = ({ resumeData, previewId = "resume-preview" }: TemplateProps) => (
+  <div id={previewId} className={`p-12 min-h-[1122px] w-full max-w-[800px] mx-auto bg-white text-slate-800 font-${resumeData.font || 'serif'} overflow-hidden shadow-sm border border-slate-200`}>
+    <header className="border-b-2 border-slate-800 pb-6 mb-8 flex justify-between items-end">
+      <div>
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-1">{resumeData.fullName}</h1>
+        <p className="text-xl font-medium text-slate-600">{resumeData.jobTitle}</p>
+      </div>
+      <div className="text-right text-sm text-slate-500 space-y-1">
+        <p className="flex items-center justify-end gap-2">{resumeData.email}</p>
+        <p>{resumeData.phone}</p>
+        <p>{resumeData.location}</p>
+      </div>
+    </header>
+
+    <div className="space-y-8">
+      {resumeData.summary && (
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-slate-900 border-b border-slate-100 pb-1 mb-3">Professional Summary</h2>
+          <p className="text-base leading-relaxed">{resumeData.summary}</p>
+        </section>
+      )}
+
+      <section>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-900 border-b border-slate-100 pb-1 mb-4">Core Competencies</h2>
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          {resumeData.skills.map((skill, i) => (
+            <span key={i} className="text-sm font-medium flex items-center gap-2">
+              <span className="w-1 h-1 rounded-full bg-slate-400" /> {skill}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-900 border-b border-slate-100 pb-1 mb-4">Professional Experience</h2>
+        <div className="space-y-6">
+          {resumeData.experience.map((exp, i) => (
+            <div key={i}>
+              <div className="flex justify-between items-baseline mb-1">
+                <h3 className="font-bold text-slate-900">{exp.company}</h3>
+                <span className="text-sm font-medium text-slate-500 italic">{exp.period}</span>
+              </div>
+              <p className="text-sm font-bold text-slate-700 italic mb-2">{exp.role}</p>
+              <div className="text-sm leading-relaxed whitespace-pre-line text-slate-600 pl-4 border-l-2 border-slate-50">
+                {exp.description}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-12">
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-slate-900 border-b border-slate-100 pb-1 mb-3">Education</h2>
+          {resumeData.education.map((edu, i) => (
+            <div key={i} className="mb-3 last:mb-0">
+              <p className="font-bold text-sm text-slate-900">{edu.school}</p>
+              <p className="text-xs text-slate-600">{edu.degree}</p>
+              <p className="text-[10px] text-slate-400 font-bold">{edu.year}</p>
+            </div>
+          ))}
+        </section>
+
+        {resumeData.references.length > 0 && (
+          <section>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-slate-900 border-b border-slate-100 pb-1 mb-3">References</h2>
+            {resumeData.references.map((ref, i) => (
+              <div key={i} className="mb-3 last:mb-0">
+                <p className="font-bold text-xs text-slate-900">{ref.name}</p>
+                <p className="text-[10px] text-slate-500">{ref.position}{ref.company ? `, ${ref.company}` : ''}</p>
+                <p className="text-[10px] italic text-slate-400 break-all">{ref.contact}</p>
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
+export const ModernCompactTemplate = ({ resumeData, previewId = "resume-preview" }: TemplateProps) => (
+  <div id={previewId} className={`p-8 min-h-[1122px] w-full max-w-[800px] mx-auto bg-white text-slate-800 font-${resumeData.font || 'sans'} overflow-hidden shadow-lg border-[10px] border-secondary/20`}>
+    <header className="flex gap-6 items-center mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+      {resumeData.profilePic && (
+        <img 
+          src={resumeData.profilePic} 
+          alt="Profile" 
+          className="w-24 h-24 rounded-xl object-cover shadow-md"
+        />
+      )}
+      <div className="flex-1">
+        <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-900 leading-none mb-1">{resumeData.fullName}</h1>
+        <p className="text-lg font-bold text-primary mb-3">{resumeData.jobTitle}</p>
+        <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <span className="flex items-center gap-1.5 break-all">{resumeData.email}</span>
+          <span>{resumeData.phone}</span>
+          <span>{resumeData.location}</span>
+        </div>
+      </div>
+    </header>
+
+    <div className="space-y-6">
+      <section className="bg-primary/[0.03] p-4 rounded-xl border border-primary/5">
+        <p className="text-sm leading-relaxed italic text-slate-600 font-medium">{resumeData.summary}</p>
+      </section>
+
+      <div className="grid grid-cols-12 gap-8">
+        <div className="col-span-8 space-y-8">
+          <section>
+            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-4 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary" /> Experience
+            </h2>
+            <div className="space-y-6">
+              {resumeData.experience.map((exp, i) => (
+                <div key={i} className="relative pl-4 border-l border-slate-100 last:border-transparent">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <h3 className="font-bold text-slate-900">{exp.role}</h3>
+                    <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded uppercase">{exp.period}</span>
+                  </div>
+                  <p className="text-xs font-bold text-primary mb-2 uppercase tracking-wide">{exp.company}</p>
+                  <p className="text-xs leading-relaxed text-slate-600 line-clamp-4">{exp.description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <div className="col-span-4 space-y-8">
+          <section>
+            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-4 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary" /> Expertise
+            </h2>
+            <div className="flex flex-wrap gap-1.5">
+              {resumeData.skills.map((skill, i) => (
+                <span key={i} className="text-[10px] font-bold bg-slate-900 text-white px-2 py-1 rounded">
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-4 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary" /> Education
+            </h2>
+            <div className="space-y-4">
+              {resumeData.education.map((edu, i) => (
+                <div key={i}>
+                  <p className="font-bold text-xs text-slate-900">{edu.degree}</p>
+                  <p className="text-[10px] text-slate-500">{edu.school}</p>
+                  <p className="text-[10px] font-black text-slate-300 mt-1">{edu.year}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+);

@@ -50,12 +50,24 @@
         "content": "text",
         "created_at": "timestamp with time zone default now()"
       }
+    },
+    "job_alerts": {
+      "description": "User subscriptions for job alerts",
+      "columns": {
+        "id": "uuid primary key default gen_random_uuid()",
+        "uid": "uuid references auth.users",
+        "keywords": "text",
+        "location": "text",
+        "is_active": "boolean default true",
+        "created_at": "timestamp with time zone default now()"
+      }
     }
   },
   "policies": {
     "profiles": "Users can only read and update their own profile",
     "resumes": "Users can only read, update, and delete their own resumes. Public read access for specific resume IDs if needed (though currently handled via PublicResume page which uses service role or anon key with proper RLS)",
     "applications": "Users can only read, insert, and delete their own applications",
-    "cover_letters": "Users can only read and insert their own cover letters"
+    "cover_letters": "Users can only read and insert their own cover letters",
+    "job_alerts": "Users can only read, insert, update, and delete their own job alerts"
   }
 }

@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle, Link as LinkIcon, Linkedin } from 'lucide-react';
+import { FileText, Wand2, Download, Save, Plus, Trash2, Loader2, Upload, Layout, ArrowRight, User, Share2, Mail, MessageCircle, Link as LinkIcon, Linkedin, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { generateAIContent, cleanJson } from '../lib/gemini';
@@ -24,7 +24,9 @@ import {
   ClassicTemplate,
   CreativeTemplate,
   MinimalTemplate,
-  ExecutiveTemplate
+  ExecutiveTemplate,
+  ProfessionalTemplate,
+  ModernCompactTemplate
 } from '../components/ResumeTemplates';
 import {
   Dialog,
@@ -44,7 +46,10 @@ export default function ResumeBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
+  const [jobDescription, setJobDescription] = useState('');
   const [aiSuggestedSkills, setAiSuggestedSkills] = useState<string[]>([]);
+  const [optimizationSuggestions, setOptimizationSuggestions] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [resumeData, setResumeData] = useState<ResumeData>({
@@ -542,6 +547,63 @@ export default function ResumeBuilder() {
     toast.success('Link copied to clipboard');
   };
 
+  const optimizeForJob = async () => {
+    if (!jobDescription) {
+      toast.error('Please enter a job description to optimize for.');
+      return;
+    }
+
+    setOptimizing(true);
+    try {
+      const prompt = `You are an expert resume optimizer. Analyze the following resume content and the job description provided. Suggest specific optimizations, missing keywords, and profile improvements to better align the resume with the target role.
+      
+      Resume Content: ${JSON.stringify(resumeData)}
+      
+      Job Description: ${jobDescription}
+      
+      Return a JSON object with:
+      - generalSuggestions: Array of 3-5 high-level improvement suggestions.
+      - keywordAdditions: Array of 5-8 missing keywords found in the JD that should be added.
+      - tailoredSummary: A rewritten summary specifically tailored to this JD.
+      - skillsToHighlight: Array of skills from the resume that are most relevant to this JD.`;
+
+      const result = await generateAIContent(prompt, {
+        jsonMode: true,
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            generalSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            keywordAdditions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            tailoredSummary: { type: Type.STRING },
+            skillsToHighlight: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["generalSuggestions", "keywordAdditions", "tailoredSummary", "skillsToHighlight"]
+        }
+      });
+
+      if (!result.success) throw new Error(result.error);
+
+      const suggestions = JSON.parse(cleanJson(result.text));
+      setOptimizationSuggestions(suggestions.generalSuggestions);
+      
+      // Merge tailored summary if user wants
+      toast.success('AI Analysis complete!', {
+        description: 'Check the new "Optimization" tab for suggestions.',
+        duration: 5000
+      });
+      
+      // We could automatically set the summary or let user choose. Let's let them choose via the UI we'll add.
+      (window as any).tailoredSummary = suggestions.tailoredSummary;
+      (window as any).keywordAdditions = suggestions.keywordAdditions;
+
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Failed to optimize resume.');
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
   const handleShareWhatsApp = () => {
     if (userData?.plan !== 'pro') {
       toast.error('Sharing via WhatsApp is a Pro feature.');
@@ -854,6 +916,7 @@ export default function ResumeBuilder() {
                   <TabsTrigger value="skills" className="flex-shrink-0 sm:flex-shrink snap-start">Skills</TabsTrigger>
                   <TabsTrigger value="education" className="flex-shrink-0 sm:flex-shrink snap-start">Education</TabsTrigger>
                   <TabsTrigger value="references" className="flex-shrink-0 sm:flex-shrink snap-start">References</TabsTrigger>
+                  <TabsTrigger value="optimization" className="flex-shrink-0 sm:flex-shrink snap-start">Optimization</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="templates" className="space-y-6">
@@ -921,6 +984,32 @@ export default function ResumeBuilder() {
                         }}
                         label="Executive"
                         description="High-level authority"
+                        isPro={userData?.plan !== 'pro'}
+                      />
+                      <TemplateOption 
+                        active={resumeData.template === 'professional'} 
+                        onClick={() => {
+                          if (userData?.plan !== 'pro') {
+                            toast.error('Professional template is a Pro feature.');
+                            return;
+                          }
+                          setResumeData(p => ({ ...p, template: 'professional' }));
+                        }}
+                        label="Professional"
+                        description="Standard & formal"
+                        isPro={userData?.plan !== 'pro'}
+                      />
+                      <TemplateOption 
+                        active={resumeData.template === 'compact'} 
+                        onClick={() => {
+                          if (userData?.plan !== 'pro') {
+                            toast.error('Compact template is a Pro feature.');
+                            return;
+                          }
+                          setResumeData(p => ({ ...p, template: 'compact' }));
+                        }}
+                        label="Compact"
+                        description="Modern & dense"
                         isPro={userData?.plan !== 'pro'}
                       />
                     </div>
@@ -1179,6 +1268,89 @@ export default function ResumeBuilder() {
                     <Plus size={18} /> Add Reference
                   </Button>
                 </TabsContent>
+
+                <TabsContent value="optimization" className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-lg font-bold">AI Content Optimization</Label>
+                      {userData?.plan !== 'pro' && <Badge variant="secondary">PRO FEATURE</Badge>}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Paste a job description below to get tailored suggestions, keyword improvements, and a custom profile summary.
+                    </p>
+                    <Textarea 
+                      placeholder="Paste the target job description here..." 
+                      className="min-h-[200px]"
+                      value={jobDescription}
+                      onChange={(e) => setJobDescription(e.target.value)}
+                      disabled={userData?.plan !== 'pro'}
+                    />
+                    <Button 
+                      className="w-full gap-2" 
+                      onClick={optimizeForJob} 
+                      disabled={optimizing || userData?.plan !== 'pro'}
+                    >
+                      {optimizing ? <Loader2 className="animate-spin" size={18} /> : <Wand2 size={18} />}
+                      {optimizing ? 'Analyzing...' : 'Tailor Resume for this Job'}
+                    </Button>
+                  </div>
+
+                  {optimizationSuggestions.length > 0 && (
+                    <div className="space-y-4 pt-6 border-t">
+                      <h4 className="font-bold flex items-center gap-2">
+                         <Zap className="text-amber-500" size={18} /> AI Recommendations
+                      </h4>
+                      <ul className="space-y-2">
+                        {optimizationSuggestions.map((s, i) => (
+                          <li key={i} className="text-sm flex gap-2">
+                            <span className="text-primary font-bold">•</span> {s}
+                          </li>
+                        ))}
+                      </ul>
+
+                      { (window as any).tailoredSummary && (
+                        <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                          <h5 className="text-xs font-black uppercase tracking-wider text-primary">Tailored Profile Summary</h5>
+                          <p className="text-sm italic">"{(window as any).tailoredSummary}"</p>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="w-full text-xs h-8"
+                            onClick={() => {
+                              setResumeData(prev => ({ ...prev, summary: (window as any).tailoredSummary }));
+                              toast.success('Summary updated!');
+                            }}
+                          >
+                            Apply this Summary
+                          </Button>
+                        </div>
+                      )}
+
+                      { (window as any).keywordAdditions && (window as any).keywordAdditions.length > 0 && (
+                        <div className="space-y-3">
+                          <h5 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Suggested Keywords to Add</h5>
+                          <div className="flex flex-wrap gap-2">
+                            {(window as any).keywordAdditions.map((k: string, i: number) => (
+                              <Badge 
+                                key={i} 
+                                variant="outline" 
+                                className="cursor-pointer hover:bg-primary/10"
+                                onClick={() => {
+                                  if (!resumeData.skills.includes(k)) {
+                                    setResumeData(prev => ({ ...prev, skills: [...prev.skills, k] }));
+                                    toast.success(`Skill "${k}" added!`);
+                                  }
+                                }}
+                              >
+                                + {k}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </TabsContent>
               </Tabs>
             </CardContent>
           </Card>
@@ -1223,6 +1395,8 @@ export default function ResumeBuilder() {
                     {resumeData.template === 'creative' && <CreativeTemplate resumeData={resumeData} previewId="resume-preview" />}
                     {resumeData.template === 'minimal' && <MinimalTemplate resumeData={resumeData} previewId="resume-preview" />}
                     {resumeData.template === 'executive' && <ExecutiveTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'professional' && <ProfessionalTemplate resumeData={resumeData} previewId="resume-preview" />}
+                    {resumeData.template === 'compact' && <ModernCompactTemplate resumeData={resumeData} previewId="resume-preview" />}
                   </div>
                 </div>
             </CardContent>

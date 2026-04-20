@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
-import { CheckCircle2, Shield, User, Zap, Loader2 } from 'lucide-react';
+import { CheckCircle2, Shield, User, Zap, Loader2, Bell, BellRing, Trash2, Plus } from 'lucide-react';
 import { PayPalButtons } from "@paypal/react-paypal-js";
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
@@ -13,11 +13,98 @@ import { toast } from 'sonner';
 export default function Settings() {
   const { user, userData } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [jobAlerts, setJobAlerts] = useState<any[]>([]);
+  const [newAlert, setNewAlert] = useState({ keywords: '', location: '' });
   const [profileData, setProfileData] = useState({
     displayName: userData?.display_name || '',
     email: userData?.email || ''
   });
+
   const [emailError, setEmailError] = useState('');
+
+  React.useEffect(() => {
+    if (user) {
+      fetchJobAlerts();
+    }
+  }, [user]);
+
+  const fetchJobAlerts = async () => {
+    setAlertsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('job_alerts')
+        .select('*')
+        .eq('uid', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setJobAlerts(data || []);
+    } catch (error: any) {
+      console.error('Fetch Alerts Error:', error);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const addJobAlert = async () => {
+    if (!user || !newAlert.keywords || !newAlert.location) {
+      toast.error('Please fill in both keywords and location');
+      return;
+    }
+    
+    setAlertsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('job_alerts')
+        .insert({
+          uid: user.id,
+          keywords: newAlert.keywords,
+          location: newAlert.location
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      setJobAlerts(prev => [data, ...prev]);
+      setNewAlert({ keywords: '', location: '' });
+      toast.success('Job alert created!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create alert');
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const deleteJobAlert = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('job_alerts')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setJobAlerts(prev => prev.filter(a => a.id !== id));
+      toast.success('Alert deleted');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete alert');
+    }
+  };
+
+  const toggleAlertStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('job_alerts')
+        .update({ is_active: !currentStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+      setJobAlerts(prev => prev.map(a => a.id === id ? { ...a, is_active: !currentStatus } : a));
+      toast.success(currentStatus ? 'Alert paused' : 'Alert resumed');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update alert');
+    }
+  };
 
   const validateEmail = (email: string) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -215,6 +302,76 @@ export default function Settings() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Job Alerts Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell size={20} className="text-primary" /> Job Alerts
+            </CardTitle>
+            <CardDescription>Get notified when jobs matching your criteria are found.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex flex-col md:flex-row gap-4 p-4 border rounded-lg bg-muted/30">
+              <div className="flex-1 space-y-2">
+                <Label>Keywords (e.g. Senior React Developer)</Label>
+                <Input 
+                  placeholder="Software Engineer..." 
+                  value={newAlert.keywords}
+                  onChange={(e) => setNewAlert({ ...newAlert, keywords: e.target.value })}
+                />
+              </div>
+              <div className="flex-1 space-y-2">
+                <Label>Location</Label>
+                <Input 
+                  placeholder="Remote, NY, San Francisco..." 
+                  value={newAlert.location}
+                  onChange={(e) => setNewAlert({ ...newAlert, location: e.target.value })}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button className="w-full md:w-auto gap-2" onClick={addJobAlert} disabled={alertsLoading}>
+                  <Plus size={18} /> Create Alert
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <BellRing size={14} /> My Active Alerts
+              </h4>
+              {jobAlerts.length === 0 ? (
+                <div className="text-center py-8 border border-dashed rounded-lg">
+                  <p className="text-muted-foreground">No job alerts set up yet.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {jobAlerts.map((alert) => (
+                    <div key={alert.id} className="flex items-center justify-between p-4 border rounded-lg bg-background hover:border-primary/50 transition-colors">
+                      <div>
+                        <p className="font-bold">{alert.keywords}</p>
+                        <p className="text-sm text-muted-foreground">{alert.location}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className={alert.is_active ? "text-primary" : "text-muted-foreground"}
+                          onClick={() => toggleAlertStatus(alert.id, alert.is_active)}
+                        >
+                          {alert.is_active ? "Active" : "Paused"}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => deleteJobAlert(alert.id)}>
+                          <Trash2 size={18} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Search, MapPin, Briefcase, Zap, CheckCircle2, Loader2, ExternalLink, Navigation, FileWarning, Plus } from 'lucide-react';
+import { Search, MapPin, Briefcase, Zap, CheckCircle2, Loader2, ExternalLink, Navigation, FileWarning, Plus, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { generateAIContent, cleanJson } from '../lib/gemini';
@@ -79,6 +79,7 @@ export default function JobSearch() {
   const [targetJob, setTargetJob] = useState<Job | null>(null);
   const [recruiterEmail, setRecruiterEmail] = useState('');
   const [isGuessingEmail, setIsGuessingEmail] = useState(false);
+  const [savingAlert, setSavingAlert] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -481,6 +482,44 @@ export default function JobSearch() {
     }
   };
 
+  const handleSaveAlert = async () => {
+    if (!user) {
+      toast.error('Please sign in to save job alerts.');
+      return;
+    }
+
+    if (!searchTerm && !locationTerm) {
+      toast.error('Please enter keywords or location to save an alert.');
+      return;
+    }
+
+    setSavingAlert(true);
+    try {
+      const { error } = await supabase
+        .from('job_alerts')
+        .insert([
+          {
+            uid: user.id,
+            keywords: searchTerm,
+            location: locationTerm,
+            active: true,
+            created_at: new Date().toISOString()
+          }
+        ]);
+
+      if (error) throw error;
+      toast.success('Job alert created!', {
+        description: `We'll email you matching jobs for "${searchTerm}" ${locationTerm ? `in ${locationTerm}` : ''}.`,
+        icon: <Bell size={18} className="text-primary" />
+      });
+    } catch (err: any) {
+      console.error('Save Alert Error:', err);
+      toast.error('Failed to save job alert.');
+    } finally {
+      setSavingAlert(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-12">
@@ -522,6 +561,16 @@ export default function JobSearch() {
         <Button size="lg" className="h-12 px-8 gap-2" onClick={fetchRealJobs} disabled={loading}>
           {loading ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
           Search Jobs
+        </Button>
+        <Button 
+          variant="outline" 
+          size="lg" 
+          className="h-12 px-4 gap-2 border-primary/20 hover:border-primary/50 text-primary"
+          onClick={handleSaveAlert}
+          disabled={savingAlert || (!searchTerm && !locationTerm)}
+        >
+          {savingAlert ? <Loader2 className="animate-spin" size={20} /> : <Bell size={20} />}
+          <span className="hidden sm:inline">Set Alert</span>
         </Button>
       </div>
 

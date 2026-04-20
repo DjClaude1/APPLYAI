@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -17,6 +18,8 @@ export default function CoverLetter() {
   const [resumes, setResumes] = useState<any[]>([]);
   const [selectedResume, setSelectedResume] = useState<string>('');
   const [jobDescription, setJobDescription] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [companyWebsite, setCompanyWebsite] = useState('');
   const [companyCulture, setCompanyCulture] = useState('');
   const [achievements, setAchievements] = useState('');
   const [generatedLetter, setGeneratedLetter] = useState('');
@@ -68,6 +71,7 @@ export default function CoverLetter() {
       Resume: ${resumeContent}
       
       Job Description: ${jobDescription}
+      Company: ${companyName} ${companyWebsite ? `(${companyWebsite})` : ''}
       
       ${companyCulture ? `Company Culture/Values to align with: ${companyCulture}` : ''}
       ${achievements ? `Specific Achievements to highlight: ${achievements}` : ''}
@@ -190,6 +194,25 @@ export default function CoverLetter() {
                   value={jobDescription || ''}
                   onChange={(e) => setJobDescription(e.target.value)}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Company Name</Label>
+                  <Input 
+                    placeholder="e.g. Acme Corp" 
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Company Website (Optional)</Label>
+                  <Input 
+                    placeholder="https://company.com" 
+                    value={companyWebsite}
+                    onChange={(e) => setCompanyWebsite(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
