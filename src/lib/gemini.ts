@@ -28,40 +28,57 @@ export async function generateAIContent(prompt: string, options: {
     mimeType: string;
   }
 } = {}) {
-  const { systemInstruction, jsonMode, useSearch, responseSchema, inlineData } = options;
+  const { systemInstruction, jsonMode, responseSchema, inlineData } = options;
 
-  try {
-    const contents: any[] = [];
-    
-    if (inlineData) {
-      contents.push({
+  // For multi-modal (inlineData), we still use Gemini directly on client if possible
+  // because it's more efficient for large payloads.
+  // But for text-only, we go through the backend to handle the OpenAI fallback.
+  if (inlineData) {
+    try {
+      const contents: any[] = [{
         parts: [
           { text: prompt },
           { inlineData }
         ]
-      });
-    } else {
-      contents.push(prompt);
-    }
+      }];
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: contents.length === 1 && !inlineData ? prompt : { parts: inlineData ? [{ text: prompt }, { inlineData }] : [{ text: prompt }] },
-      config: {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: jsonMode ? "application/json" : "text/plain",
+          responseSchema: jsonMode ? responseSchema : undefined,
+        },
+      });
+
+      return {
+        success: true,
+        text: response.text || "",
+      };
+    } catch (error: any) {
+      console.error("Gemini Direct Error:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Text-only generation with fallback logic in backend
+  try {
+    const response = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
         systemInstruction,
-        responseMimeType: jsonMode ? "application/json" : "text/plain",
-        responseSchema: jsonMode ? responseSchema : undefined,
-        tools: useSearch ? [{ googleSearch: {} } as any] : undefined,
-        toolConfig: useSearch ? { includeServerSideToolInvocations: true } : undefined,
-      },
+        jsonMode,
+        responseSchema
+      })
     });
 
-    return {
-      success: true,
-      text: response.text || "",
-    };
+    const result = await response.json();
+    return result;
   } catch (error: any) {
-    console.error("Gemini AI Error:", error);
+    console.error("AI Generation Error:", error);
     return {
       success: false,
       error: error.message || "Failed to generate AI content",

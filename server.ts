@@ -5,6 +5,10 @@ import { fileURLToPath } from "url";
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,10 +40,61 @@ async function startServer() {
   );
   
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+
+  const generateAI = async (options: {
+    prompt: string,
+    systemInstruction?: string,
+    jsonMode?: boolean,
+    responseSchema?: any
+  }) => {
+    const { prompt, systemInstruction, jsonMode, responseSchema } = options;
+
+    try {
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: jsonMode ? "application/json" : "text/plain",
+          systemInstruction: systemInstruction,
+          responseSchema: jsonMode ? responseSchema : undefined,
+        }
+      });
+      return { success: true, text: result.text || "", provider: 'gemini' };
+    } catch (geminiError: any) {
+      console.warn("Gemini failure, falling back to OpenAI:", geminiError.message);
+      if (openai) {
+        try {
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              ...(systemInstruction ? [{ role: "system" as const, content: systemInstruction }] : []),
+              { role: "user" as const, content: prompt }
+            ],
+            response_format: jsonMode ? { type: "json_object" } : { type: "text" },
+          });
+          return { success: true, text: response.choices[0]?.message?.content || "", provider: 'openai' };
+        } catch (openaiError: any) {
+          console.error("OpenAI fallback failed:", openaiError.message);
+          throw new Error(`Both AI providers failed. Gemini: ${geminiError.message}. OpenAI: ${openaiError.message}`);
+        }
+      }
+      throw geminiError;
+    }
+  };
 
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  app.post("/api/ai/generate", async (req, res) => {
+    try {
+      const result = await generateAI(req.body);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   });
 
   app.post("/api/send-resume", async (req, res) => {
@@ -102,18 +157,15 @@ async function startServer() {
             continue;
           }
 
-          // 2. Search for jobs using Gemini
+          // 2. Search for jobs using helper with fallback
           const promptText = `Find 3 recent real job postings for "${alert.keywords}" in "${alert.location}". 
           Return a JSON array of objects with fields: title, company, location, link, salary. 
           Return ONLY valid JSON.`;
           
-          const aiResult = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: [{ role: 'user', parts: [{ text: promptText }] }],
-            config: {
-              responseMimeType: "application/json",
-              systemInstruction: "You are a job search assistant. Search for real job postings and return them as a JSON array."
-            }
+          const aiResult = await generateAI({
+            prompt: promptText,
+            jsonMode: true,
+            systemInstruction: "You are a job search assistant. Search for real job postings and return them as a JSON array."
           });
 
           let jobsText = aiResult.text || "[]";
