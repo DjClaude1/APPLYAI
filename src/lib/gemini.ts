@@ -1,101 +1,100 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// In Vite, process.env might not be defined in the browser.
-// The platform usually shims it, but we'll be safe.
-const getApiKey = () => {
-  try {
-    return process.env.GEMINI_API_KEY;
-  } catch (e) {
-    return undefined;
-  }
+const apiKey = process.env.GEMINI_API_KEY;
+
+export const genai = new GoogleGenAI({ apiKey: apiKey || "" });
+
+export const TAILOR_SYSTEM_PROMPT = `You are an elite career coach and resume writer with 15+ years of experience placing candidates at FAANG and top startups.
+
+Your job: given a job description and the applicant's current resume, produce:
+1. A tailored, ATS-optimized rewrite of the resume's most important bullet points — using the exact keywords and hard skills from the job description where truthful.
+2. A concise, personalized 3-paragraph cover letter written in the applicant's voice.
+3. A list of 5 specific, high-impact improvements the applicant should make to their full resume.
+
+Rules:
+- Never invent experience the applicant doesn't have. Rephrase and reframe only.
+- Quantify results where possible (%, $, time saved, scale).
+- Use strong verbs. No fluff. No clichés ("hard-working team player", "results-driven").
+- Cover letter: ≤ 220 words, no generic openers, reference 1 concrete detail from the JD.
+- Output MUST be valid JSON matching the provided schema. No markdown, no prose outside JSON.`;
+
+export const TAILOR_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    tailoredBullets: {
+      type: Type.ARRAY,
+      description: "5-8 rewritten resume bullets, strongest first.",
+      items: { type: Type.STRING },
+    },
+    coverLetter: {
+      type: Type.STRING,
+      description: "Complete cover letter, 3 paragraphs, ≤ 220 words.",
+    },
+    improvements: {
+      type: Type.ARRAY,
+      description: "5 concrete, specific improvement suggestions.",
+      items: { type: Type.STRING },
+    },
+    matchScore: {
+      type: Type.INTEGER,
+      description: "Estimated resume ↔ JD match score 0-100.",
+    },
+    topKeywords: {
+      type: Type.ARRAY,
+      description: "Top 8 keywords from the JD the resume should emphasize.",
+      items: { type: Type.STRING },
+    },
+  },
+  required: [
+    "tailoredBullets",
+    "coverLetter",
+    "improvements",
+    "matchScore",
+    "topKeywords",
+  ],
 };
 
-const GEMINI_API_KEY = getApiKey();
+export type TailorResult = {
+  tailoredBullets: string[];
+  coverLetter: string;
+  improvements: string[];
+  matchScore: number;
+  topKeywords: string[];
+};
 
-if (!GEMINI_API_KEY) {
-  console.warn("GEMINI_API_KEY is not set. AI features will not work.");
-}
+export async function tailorApplication(input: {
+  jobDescription: string;
+  resume: string;
+}): Promise<TailorResult> {
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
-export const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY || "" });
+  const prompt = `JOB DESCRIPTION:
+"""
+${input.jobDescription.slice(0, 8000)}
+"""
 
-export async function generateAIContent(prompt: string, options: { 
-  systemInstruction?: string, 
-  jsonMode?: boolean,
-  useSearch?: boolean,
-  responseSchema?: any,
-  inlineData?: {
-    data: string;
-    mimeType: string;
-  }
-} = {}) {
-  const { systemInstruction, jsonMode, responseSchema, inlineData } = options;
+APPLICANT'S CURRENT RESUME:
+"""
+${input.resume.slice(0, 8000)}
+"""
 
-  // For multi-modal (inlineData), we still use Gemini directly on client if possible
-  // because it's more efficient for large payloads.
-  // But for text-only, we go through the backend to handle the OpenAI fallback.
-  if (inlineData) {
-    try {
-      const contents: any[] = [{
-        parts: [
-          { text: prompt },
-          { inlineData }
-        ]
-      }];
+Return JSON only.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents,
-        config: {
-          systemInstruction,
-          responseMimeType: jsonMode ? "application/json" : "text/plain",
-          responseSchema: jsonMode ? responseSchema : undefined,
-        },
-      });
+  const response = await genai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      systemInstruction: TAILOR_SYSTEM_PROMPT,
+      responseMimeType: "application/json",
+      responseSchema: TAILOR_SCHEMA,
+      temperature: 0.7,
+    },
+  });
 
-      return {
-        success: true,
-        text: response.text || "",
-      };
-    } catch (error: any) {
-      console.error("Gemini Direct Error:", error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // Text-only generation with fallback logic in backend
-  try {
-    const response = await fetch('/api/ai/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        systemInstruction,
-        jsonMode,
-        responseSchema
-      })
-    });
-
-    const result = await response.json();
-    return result;
-  } catch (error: any) {
-    console.error("AI Generation Error:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to generate AI content",
-    };
-  }
-}
-
-export function cleanJson(text: string): string {
-  if (!text) return "[]";
-  let cleaned = text.trim();
-  if (!cleaned) return "[]";
-  
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```\n?/, '').replace(/\n?```$/, '');
-  }
-  
-  return cleaned || "[]";
+  const text = response.text || "";
+  const cleaned = text
+    .replace(/^```json\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+  return JSON.parse(cleaned) as TailorResult;
 }

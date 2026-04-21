@@ -1,60 +1,41 @@
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { FileText, Search, LayoutDashboard, Settings, LogOut, Briefcase, Menu, ShieldCheck } from 'lucide-react';
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
 
-export default function Navbar({ onMenuClick }: { onMenuClick?: () => void }) {
-  const { user, userData, login, logout } = useAuth();
-  const navigate = useNavigate();
+export default async function Navbar() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <div className="flex items-center gap-2">
-          {user && (
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={onMenuClick}>
-              <Menu size={24} />
-            </Button>
-          )}
-          {!user && (
-            <Link to="/" className="flex items-center gap-2 font-bold text-2xl tracking-tight">
-              <div className="bg-primary text-primary-foreground p-1 rounded-lg">
-                <Briefcase size={24} />
-              </div>
-              <span>ApplyAI</span>
-            </Link>
-          )}
-          {userData?.role === 'admin' && (
-            <Badge variant="outline" className="hidden sm:flex items-center gap-1 border-primary text-primary bg-primary/5">
-              <ShieldCheck size={12} /> Admin Mode
-            </Badge>
-          )}
-        </div>
-
-        <div className="hidden md:flex items-center gap-6">
-          {/* Main navigation moved to Sidebar */}
-        </div>
-
-        <div className="flex items-center gap-4">
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-black/20 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+        <Link href="/" className="flex items-center gap-2 font-semibold">
+          <Sparkles className="h-5 w-5 text-violet-400" />
+          <span>ApplyAI</span>
+        </Link>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link href="/pricing" className="text-white/70 hover:text-white">
+            Pricing
+          </Link>
           {user ? (
-            <div className="flex items-center gap-4">
-              <Link to="/settings">
-                <Button variant="ghost" size="icon">
-                  <Settings size={20} />
-                </Button>
-              </Link>
-              <Button variant="outline" onClick={logout} className="gap-2">
-                <LogOut size={16} /> Logout
-              </Button>
-            </div>
+            <Link
+              href="/dashboard"
+              className="rounded-md bg-violet-500 px-3 py-1.5 font-medium text-white hover:bg-violet-400"
+            >
+              Dashboard
+            </Link>
           ) : (
-            <Link to="/auth">
-              <Button>Sign In</Button>
+            <Link
+              href="/login"
+              className="rounded-md bg-violet-500 px-3 py-1.5 font-medium text-white hover:bg-violet-400"
+            >
+              Sign in
             </Link>
           )}
-        </div>
+        </nav>
       </div>
-    </nav>
+    </header>
   );
 }
