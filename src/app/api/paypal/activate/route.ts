@@ -24,18 +24,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validate with PayPal
+    // Validate with PayPal — only ACTIVE means the buyer has approved AND the
+    // first payment has cleared. APPROVAL_PENDING / APPROVED are pre-payment
+    // states and must NOT grant Pro (the PayPal webhook will activate the
+    // plan when ACTIVATED fires).
     const sub = (await getSubscription(subscriptionId)) as {
       status?: string;
       id?: string;
     };
-    const active =
-      sub.status === "ACTIVE" ||
-      sub.status === "APPROVAL_PENDING" ||
-      sub.status === "APPROVED";
-    if (!active) {
+    if (sub.status !== "ACTIVE") {
       return NextResponse.json(
-        { error: `Subscription not active (${sub.status})` },
+        { error: `Subscription not active (${sub.status ?? "unknown"})` },
         { status: 400 },
       );
     }

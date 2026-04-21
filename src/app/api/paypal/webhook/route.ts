@@ -47,16 +47,19 @@ export async function POST(req: Request) {
 
     switch (event.event_type) {
       case "BILLING.SUBSCRIPTION.ACTIVATED":
-      case "BILLING.SUBSCRIPTION.CREATED":
       case "BILLING.SUBSCRIPTION.UPDATED": {
         const resource = event.resource as {
           id?: string;
+          status?: string;
           subscriber?: { email_address?: string };
           custom_id?: string;
         };
+        // Only grant Pro when the subscription is actually ACTIVE — PayPal
+        // fires UPDATED for many lifecycle changes (SUSPENDED, CANCELLED,
+        // EXPIRED, etc.) that must not upgrade the user.
         const subscriptionId = resource.id;
         const email = resource.subscriber?.email_address;
-        if (subscriptionId && email) {
+        if (resource.status === "ACTIVE" && subscriptionId && email) {
           await admin
             .from("profiles")
             .update({
