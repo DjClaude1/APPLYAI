@@ -22,7 +22,14 @@ export default async function Dashboard() {
     .maybeSingle();
 
   const plan = profile?.plan || "free";
-  const used = profile?.monthly_generations || 0;
+  const now = new Date();
+  const periodStart = profile?.monthly_period_start
+    ? new Date(profile.monthly_period_start)
+    : now;
+  const sameMonth =
+    periodStart.getUTCFullYear() === now.getUTCFullYear() &&
+    periodStart.getUTCMonth() === now.getUTCMonth();
+  const used = sameMonth ? profile?.monthly_generations || 0 : 0;
   const remaining =
     plan === "pro" ? Infinity : Math.max(0, FREE_MONTHLY_LIMIT - used);
 

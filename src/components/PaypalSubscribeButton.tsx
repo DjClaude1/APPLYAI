@@ -38,11 +38,17 @@ export default function PaypalSubscribeButton({ planId }: { planId: string }) {
             },
           ) => actions.subscription.create({ plan_id: planId }),
           onApprove: async (data: { subscriptionID: string }) => {
-            await fetch("/api/paypal/activate", {
+            const res = await fetch("/api/paypal/activate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ subscriptionId: data.subscriptionID }),
             });
+            if (!res.ok) {
+              setError(
+                "Activation is pending — PayPal accepted your subscription but our server could not confirm it yet. Refresh in a moment.",
+              );
+              return;
+            }
             window.location.href = "/billing/success";
           },
           onError: (err: unknown) => {

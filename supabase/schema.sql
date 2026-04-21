@@ -89,3 +89,68 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- ==========================================================================
+-- Atomic quota enforcement — eliminates the read/check/increment race.
+-- Returns (allowed, plan, used). If allowed=true the counter has already
+-- been incremented; if the subsequent Gemini call fails, call
+-- refund_generation() to roll it back.
+-- ==========================================================================
+create or replace function public.try_consume_generation(
+  p_uid uuid,
+  p_limit integer,
+  p_email text default null
+)
+returns table(allowed boolean, plan text, used integer)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_now timestamptz := now();
+  v_period_start timestamptz;
+  v_plan text;
+  v_monthly integer;
+begin
+  insert into public.profiles (id, email)
+    values (p_uid, p_email)
+    on conflict (id) do nothing;
+
+  select p.plan, p.monthly_generations, p.monthly_period_start
+    into v_plan, v_monthly, v_period_start
+    from public.profiles p
+    where p.id = p_uid
+    for update;
+
+  if date_trunc('month', v_period_start) <> date_trunc('month', v_now) then
+    v_monthly := 0;
+    v_period_start := date_trunc('month', v_now);
+  end if;
+
+  if v_plan = 'pro' or v_monthly < p_limit then
+    update public.profiles
+      set monthly_generations = v_monthly + 1,
+          monthly_period_start = v_period_start,
+          updated_at = v_now
+      where id = p_uid;
+    return query select true, v_plan, v_monthly + 1;
+  else
+    return query select false, v_plan, v_monthly;
+  end if;
+end;
+$$;
+
+create or replace function public.refund_generation(p_uid uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.profiles
+    set monthly_generations = greatest(0, monthly_generations - 1),
+        updated_at = now()
+    where id = p_uid;
+end;
+$$;
+
+revoke all on function public.try_consume_generation(uuid, integer, text) from public, anon;
+revoke all on function public.refund_generation(uuid) from public, anon;

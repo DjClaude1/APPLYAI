@@ -7,76 +7,63 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: { jobDescription?: string; resume?: string };
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = (await req.json()) as {
-      jobDescription?: string;
-      resume?: string;
-    };
-    const jobDescription = (body.jobDescription || "").trim();
-    const resume = (body.resume || "").trim();
-    if (jobDescription.length < 50 || resume.length < 50) {
-      return NextResponse.json(
-        { error: "Paste a full job description and resume (min 50 chars each)." },
-        { status: 400 },
-      );
-    }
-
-    const admin = createAdminClient();
-
-    // Ensure profile exists
-    const { data: existing } = await admin
-      .from("profiles")
-      .select("id, plan, monthly_generations, monthly_period_start")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    const now = new Date();
-    const periodStart = existing?.monthly_period_start
-      ? new Date(existing.monthly_period_start)
-      : now;
-    const sameMonth =
-      periodStart.getUTCFullYear() === now.getUTCFullYear() &&
-      periodStart.getUTCMonth() === now.getUTCMonth();
-    const plan = existing?.plan || "free";
-    const used = sameMonth ? existing?.monthly_generations || 0 : 0;
-
-    if (plan !== "pro" && used >= FREE_MONTHLY_LIMIT) {
-      return NextResponse.json(
-        {
-          error:
-            "You've used all your free tailors this month. Upgrade to Pro for unlimited.",
-          code: "quota_exceeded",
-        },
-        { status: 402 },
-      );
-    }
-
-    const result = await tailorApplication({ jobDescription, resume });
-
-    // Persist usage and history
-    await admin.from("profiles").upsert(
-      {
-        id: user.id,
-        email: user.email,
-        plan,
-        monthly_generations: used + 1,
-        monthly_period_start: sameMonth
-          ? existing?.monthly_period_start
-          : new Date(
-              Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-            ).toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
+    body = (await req.json()) as { jobDescription?: string; resume?: string };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const jobDescription = (body.jobDescription || "").trim();
+  const resume = (body.resume || "").trim();
+  if (jobDescription.length < 50 || resume.length < 50) {
+    return NextResponse.json(
+      { error: "Paste a full job description and resume (min 50 chars each)." },
+      { status: 400 },
     );
+  }
+
+  const admin = createAdminClient();
+
+  // Atomic check-and-increment. Guarantees quota can't be exceeded even under
+  // concurrent requests (row lock + single transaction inside Postgres).
+  const { data: consumeRows, error: consumeErr } = await admin.rpc(
+    "try_consume_generation",
+    {
+      p_uid: user.id,
+      p_limit: FREE_MONTHLY_LIMIT,
+      p_email: user.email,
+    },
+  );
+  if (consumeErr) {
+    console.error("[/api/generate] rpc error", consumeErr);
+    return NextResponse.json(
+      { error: "Internal error reserving quota" },
+      { status: 500 },
+    );
+  }
+  const consume = Array.isArray(consumeRows) ? consumeRows[0] : consumeRows;
+  if (!consume?.allowed) {
+    return NextResponse.json(
+      {
+        error:
+          "You've used all your free tailors this month. Upgrade to Pro for unlimited.",
+        code: "quota_exceeded",
+      },
+      { status: 402 },
+    );
+  }
+
+  // Counter is already incremented. If Gemini fails, refund it.
+  try {
+    const result = await tailorApplication({ jobDescription, resume });
 
     await admin.from("generations").insert({
       uid: user.id,
@@ -88,8 +75,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ data: result });
   } catch (e: unknown) {
-    console.error("[/api/generate]", e);
-    const message = e instanceof Error ? e.message : "Internal error";
+    await admin.rpc("refund_generation", { p_uid: user.id });
+    console.error("[/api/generate] gemini error", e);
+    const message = e instanceof Error ? e.message : "Generation failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
